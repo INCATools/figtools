@@ -1,4 +1,3 @@
-import java.util
 import java.util.regex.Pattern
 
 import sbt._
@@ -43,10 +42,8 @@ lazy val figtools = (project in file(".")).
       val coursier = (baseDirectory.value / "lib" / "coursier.jar").toString
       val artifacts = (libraryDependencies.value).
         map(x => {
-          val parts: Array[String] = x.explicitArtifacts.map(x=>x.)
-          val artfact = parts.take(3).mkString(":")
-          val classifier = parts.drop(3).mkString(":")
-          s"$artifact${if (classifier.isEmpty) "" else s" -C $classifier"}"
+          val classifiers = x.explicitArtifacts.flatMap(_.classifier).map(x=>s" -C $x").mkString("")
+          s"$x$classifiers"
         }).mkString(" ")
 
       val cmd = s"java -cp $coursier coursier.Bootstrap fetch $artifacts"

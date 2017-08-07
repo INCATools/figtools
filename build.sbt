@@ -2,6 +2,9 @@ import java.util.regex.Pattern
 
 import sbt._
 
+import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
+
 val Organization = "figtools"
 val Name = "figtools"
 val Version = "0.1.0"
@@ -40,28 +43,41 @@ lazy val figtools = (project in file(".")).
     },
     assemblyOption in assembly := (assemblyOption in assembly).value.copy(prependShellScript = {
       val coursier = (baseDirectory.value / "lib" / "coursier.jar").toString
-      val artifacts = (libraryDependencies.value).
-        map(x => {
-          val classifiers = x.explicitArtifacts.flatMap(_.classifier).map(x=>s" -C $x").mkString("")
-          s"$x$classifiers"
-        }).mkString(" ")
-
-      val cmd = s"java -cp $coursier coursier.Bootstrap fetch $artifacts"
-      println(s"running cmd: $cmd")
-      val jars = Process(cmd).lines_!.
-        map(x => x.replaceFirst(s"""^${Pattern.quote(System.getProperty("user.home"))}/(.*)$$""","""\$HOME/$1""")).
-        mkString(" ")
-
+      val artifactsMap = new mutable.HashMap[String,mutable.Set[String]] with mutable.MultiMap[String,String]
+      for (dep <- libraryDependencies.value) {
+        val classifiers = dep.explicitArtifacts.flatMap(_.classifier)
+        if (classifiers.isEmpty) {
+          artifactsMap.addBinding("", dep.toString())
+        }
+        else {
+          for (classifier <- classifiers) {
+            artifactsMap.addBinding(classifier, dep.toString())
+          }
+        }
+      }
       val repos = resolvers.value.map(
         _.toString.replaceFirst("""^[^:]*:\s*""","").split(" ").
           map(x=>s"-r $x").mkString(" ")).mkString(" ")
+
+      val jarsSet = mutable.SortedSet[String]()
+      val cmds = ArrayBuffer[String]()
+      for (classifier <- artifactsMap.keys) {
+        val artifacts = artifactsMap.get(classifier).get.mkString(" ")
+        val classifierOpt = if (classifier.isEmpty) "" else s"-C $classifier"
+        val cmd = s"java -cp $coursier coursier.Bootstrap fetch $classifierOpt $artifacts"
+        println(s"running cmd: $cmd")
+        jarsSet ++= Process(cmd).lines_!.
+          map(x => x.replaceFirst(s"""^${Pattern.quote(System.getProperty("user.home"))}/(.*)$$""","""\$HOME/$1"""))
+        cmds += s"""java -noverify -XX:+UseG1GC -cp "$$0" coursier.Bootstrap fetch $repos $artifacts $classifierOpt"""
+      }
+      val jars = jarsSet.mkString(" ")
 
       Some(List(
 s"""#!/usr/bin/env bash
 jars="$jars"
 for jar in $$jars; do
   if [[ ! -e $$jar ]]; then
-    java -noverify -XX:+UseG1GC -cp "$$0" coursier.Bootstrap fetch $repos $artifacts >/dev/null
+    ${cmds.mkString("\n    ")}
     break
   fi
 done

@@ -47,8 +47,8 @@ object FigTools {
   }
 
   def treeToJSON(tree: Tree): JValue = {
-    JArray(List(JString(tree.label().toString()))) ++ (
-      if (tree.isLeaf) JArray(List(JString(tree.value()))) else treeToJSON(tree))
+    JArray(List(JString(tree.label().toString()))) ++
+      JArray(tree.children().map(t=>if (t.isLeaf) JString(t.value()) else treeToJSON(t)).toList)
   }
 
   def analyze(config: Config): Unit = {
@@ -72,7 +72,7 @@ object FigTools {
         val tree = sentence.get(classOf[TreeAnnotation])
         val json = treeToJSON(tree)
         println(s"sentence=${sentence.toString}")
-        println(s"tree=${pretty(render(json))}")
+        println(s"tree=${pretty(json)}")
       }
     }
   }

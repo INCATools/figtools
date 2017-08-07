@@ -1,3 +1,5 @@
+import java.nio.charset.StandardCharsets
+import java.nio.file.{Files, Paths}
 import java.util.regex.Pattern
 
 import sbt._
@@ -10,6 +12,7 @@ val Name = "figtools"
 val Version = "0.1.0"
 val ScalaVersion = "2.12.3"
 
+val updatePrependScript = TaskKey[Unit]("update-prepend-script")
 lazy val figtools = (project in file(".")).
   settings(
     name := Name,
@@ -41,9 +44,9 @@ lazy val figtools = (project in file(".")).
     assemblyExcludedJars in assembly := {
       (fullClasspath in assembly).value.filter(_.data.getName != "coursier.jar")
     },
-    assemblyOption in assembly := (assemblyOption in assembly).value.copy(prependShellScript = {
+    updatePrependScript := {
       val coursier = (baseDirectory.value / "lib" / "coursier.jar").toString
-      val artifactsMap = new mutable.HashMap[String,mutable.Set[String]] with mutable.MultiMap[String,String]
+      val artifactsMap = new mutable.HashMap[String, mutable.Set[String]] with mutable.MultiMap[String, String]
       for (dep <- libraryDependencies.value) {
         val classifiers = dep.explicitArtifacts.flatMap(_.classifier)
         if (classifiers.isEmpty) {
@@ -56,8 +59,8 @@ lazy val figtools = (project in file(".")).
         }
       }
       val repos = resolvers.value.map(
-        _.toString.replaceFirst("""^[^:]*:\s*""","").split(" ").
-          map(x=>s"-r $x").mkString(" ")).mkString(" ")
+        _.toString.replaceFirst("""^[^:]*:\s*""", "").split(" ").
+          map(x => s"-r $x").mkString(" ")).mkString(" ")
 
       val jarsSet = mutable.SortedSet[String]()
       val cmds = ArrayBuffer[String]()
@@ -72,8 +75,8 @@ lazy val figtools = (project in file(".")).
       }
       val jars = jarsSet.mkString(" ")
 
-      Some(List(
-s"""#!/usr/bin/env bash
+      val prependShellScript =
+        s"""#!/usr/bin/env bash
 jars="$jars"
 for jar in $$jars; do
   if [[ ! -e $$jar ]]; then
@@ -82,7 +85,14 @@ for jar in $$jars; do
   fi
 done
 exec java -noverify -XX:+UseG1GC $$JAVA_OPTS -cp "$$0:$${jars// /:}" "${(mainClass in assembly).value.get}" "$$@"
-"""))
+"""
+      Files.write(Paths.get((baseDirectory.value / "target" / "prependShellScript.sh").toString),
+        prependShellScript.getBytes(StandardCharsets.UTF_8))
+      true
+    },
+    assemblyOption in assembly := (assemblyOption in assembly).value.copy(prependShellScript = {
+      val scriptFile = baseDirectory.value/"target"/"prependShellScript.sh"
+      val prepend = scala.io.Source.fromFile(scriptFile.toString).mkString
+      Some(List(prepend))
     })
   )
-

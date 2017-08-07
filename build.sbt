@@ -65,7 +65,7 @@ lazy val figtools = (project in file(".")).
       val jarsSet = mutable.SortedSet[String]()
       val cmds = ArrayBuffer[String]()
       for (classifier <- artifactsMap.keys) {
-        val artifacts = artifactsMap.get(classifier).get.mkString(" ")
+        val artifacts = artifactsMap(classifier).mkString(" ")
         val classifierOpt = if (classifier.isEmpty) "" else s"-C $classifier"
         val cmd = s"java -cp $coursier coursier.Bootstrap fetch $classifierOpt $artifacts"
         println(s"running cmd: $cmd")

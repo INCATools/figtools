@@ -15,12 +15,9 @@ import sys.process._
 import collection.JavaConverters._
 import edu.stanford.nlp.util.logging.RedwoodConfiguration
 import ij.IJ
-import org.jline.keymap.BindingReader
-import org.jline.terminal.{Terminal, TerminalBuilder}
 
 import util.control.Breaks._
 import scala.collection.mutable.ArrayBuffer
-import scala.io.Source
 
 object FigTools {
   implicit val formats = org.json4s.DefaultFormats
@@ -56,14 +53,14 @@ object FigTools {
   }
 
   def treeToJSONList(tree: Tree): JValue = {
-    JArray(List(JString(tree.label().toString()))) ++
+    JArray(List(JString(tree.label().toString))) ++
       (if (tree.children().length ==1 && tree.getChild(0).isLeaf)
         JString(tree.getChild(0).value())
       else JArray(tree.children().map(t=>if (t.isLeaf) JString(t.value()) else treeToJSONList(t)).toList))
   }
 
   def treeToJSONObject(tree: Tree): JValue = {
-    JObject(List(tree.label().toString() ->
+    JObject(List(tree.label().toString ->
       (if (tree.children().length ==1 && tree.getChild(0).isLeaf)
         JString(tree.getChild(0).value())
       else JArray(tree.children().map(t=>if (t.isLeaf) JString(t.value()) else treeToJSONObject(t)).toList))))

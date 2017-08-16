@@ -160,40 +160,58 @@ object FigTools {
             val session = bundle.session()
 
             for (i <- 0 until rt.getCounter()) {
-              val bx = rt.getValue("BX", i).toInt
-              val by = rt.getValue("BY", i).toInt
-              val width = rt.getValue("Width", i).toInt
-              val height = rt.getValue("Height", i).toInt
+              breakable {
+                val bx = rt.getValue("BX", i).toInt
+                val by = rt.getValue("BY", i).toInt
+                val width = rt.getValue("Width", i).toInt
+                val height = rt.getValue("Height", i).toInt
+                if (!(20 <= width && width <= 80 && 20 <= height && height <= 80)) {
+                  break
+                }
 
-              // use tesseract OCR
-              val instance = new Tesseract()
-              val bi = imp.getBufferedImage()
-              val text = instance.doOCR(bi, new Rectangle(bx, by, width, height)).trim
-              println(s"OCR text ($bx,$by,$width,$height)='$text'")
+                // use tesseract OCR
+                val instance = new Tesseract()
+                val bi = imp.getBufferedImage()
+                val text = instance.doOCR(bi, new Rectangle(bx, by, width, height)).trim
+                println(s"OCR text ($bx,$by,$width,$height)='$text'")
 
-              // use tensorflow-ocr
-              imp.setRoi(new Roi(bx, by, width, height))
-              val cropped = new ImagePlus()
-              cropped.setProcessor(imp.getProcessor().crop().resize(24, 24))
-              val bytes = cropped.getProcessor().getPixels.asInstanceOf[Array[Byte]]
-              val floats: Array[Float] = bytes.map(x=>(1.0 - (2 * (x+128)) / 255.0).asInstanceOf[Float])
+                // use tensorflow-ocr
+                imp.setRoi(new Roi(bx, by, width, height))
+                val cropped = new ImagePlus()
+                cropped.setProcessor(imp.getProcessor().crop().resize(24, 24))
+                val bytes = cropped.getProcessor().getPixels.asInstanceOf[Array[Byte]]
+                for (y <- 0 until 24) {
+                  for (x <- 0 until 24) {
+                    print(f"${bytes(y*24+x) & 0xFF}%03d ")
+                  }
+                  println()
+                }
+                val floats: Array[Float] = bytes.map(x=>(1.0 - (2 * (x & 0xFF)) / 255.0).asInstanceOf[Float])
+                for (y <- 0 until 24) {
+                  for (x <- 0 until 24) {
+                    print(f"${floats(y*24+x)}%+1.2f ")
+                  }
+                  println()
+                }
 
-              for {
-                inputX <- Tensor.create(Array(24l, 24l), FloatBuffer.wrap(floats)).autoClosed
-                dropoutKeepProb <- Tensor.create(Array[Long](), FloatBuffer.wrap(Array(1f))).autoClosed
-                trainPhase <- Tensor.create(DataType.BOOL, Array[Long](),
-                  ByteBuffer.wrap(Array(0.asInstanceOf[Byte]))).autoClosed
-                result <- session.runner().
-                  feed("input/input_x", inputX).
-                  feed("state/dropout_keep_prob", dropoutKeepProb).
-                  feed("state/train_phase", trainPhase).
-                  fetch("model/prediction/Dense_96/add").
-                  run().get(0).autoClosed
-              } {
-                val output = result.copyTo(Array.ofDim[Float](1,96))
-                val (prob, best) = output(0).zipWithIndex.maxBy(_._1)
-                val ch = (best+32).toChar
-                println(s"Tensorflow detected character '$ch' with prob $prob")
+                for {
+                  inputX <- Tensor.create(Array(24l, 24l), FloatBuffer.wrap(floats)).autoClosed
+                  dropoutKeepProb <- Tensor.create(Array[Long](), FloatBuffer.wrap(Array(1f))).autoClosed
+                  trainPhase <- Tensor.create(DataType.BOOL, Array[Long](),
+                    ByteBuffer.wrap(Array(0.asInstanceOf[Byte]))).autoClosed
+                  result <- session.runner().
+                    feed("input/input_x", inputX).
+                    feed("state/dropout_keep_prob", dropoutKeepProb).
+                    feed("state/train_phase", trainPhase).
+                    fetch("model/prediction/Dense_96/add").
+                    run().get(0).autoClosed
+                } {
+                  val output = result.copyTo(Array.ofDim[Float](1,96))
+                  val (prob, best) = output(0).zipWithIndex.maxBy(_._1)
+                  val ch = (best+32).toChar
+                  println(s"Tensorflow detected character '$ch' with prob $prob")
+                }
+
               }
             }
           }

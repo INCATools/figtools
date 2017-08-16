@@ -38,10 +38,7 @@ lazy val figtools = (project in file(".")).
       "edu.stanford.nlp" % "stanford-corenlp" % "3.8.0" classifier "models-english",
       "org.json4s" % "json4s-jackson_2.12" % "3.5.3",
       "com.github.pathikrit" % "better-files_2.12" % "3.0.0",
-      "org.scalanlp" % "breeze_2.12" % "0.13.2",
-      "org.scalanlp" % "breeze-natives_2.12" % "0.13.2",
-      "org.scalanlp" % "breeze-viz_2.12" % "0.13.2",
-      "org.jline" % "jline" % "3.3.0"
+      "org.tensorflow" % "tensorflow" % "1.2.1"
     ),
     //logLevel in assembly := Level.Debug,
     assemblyOutputPath in assembly := baseDirectory.value / "bin" / name.value,

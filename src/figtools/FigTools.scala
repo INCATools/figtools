@@ -1,4 +1,6 @@
 package figtools
+import java.awt.Rectangle
+import java.nio.{ByteBuffer, FloatBuffer}
 import java.util.Properties
 import java.util.regex.Pattern
 
@@ -14,10 +16,18 @@ import scopt.OptionParser
 import sys.process._
 import collection.JavaConverters._
 import edu.stanford.nlp.util.logging.RedwoodConfiguration
-import ij.IJ
+import ij.gui.Roi
+import ij.measure.{Measurements, ResultsTable}
+import ij.plugin.Thresholder
+import ij.plugin.filter.ParticleAnalyzer
+import ij.{IJ, ImagePlus, Prefs}
+import ij.process.{BinaryProcessor, ByteProcessor, ImageConverter, StackConverter}
 
 import util.control.Breaks._
 import scala.collection.mutable.ArrayBuffer
+import net.sourceforge.tess4j.Tesseract
+import org.tensorflow._
+
 
 object FigTools {
   implicit val formats = org.json4s.DefaultFormats
@@ -78,7 +88,7 @@ object FigTools {
       val json = parse(datapackage.contentAsString)
       val description_nohtml = (json \ "description_nohtml").extract[String]
       println(s"file=$datapackage")
-      println(s"description_nohtml=$description_nohtml")
+      println(s"description_nohtml=\n$description_nohtml")
 
       val document = new Annotation(description_nohtml)
       pipeline.annotate(document)
@@ -88,8 +98,8 @@ object FigTools {
         val tree = sentence.get(classOf[TreeAnnotation])
         val json = treeToJSONObject(tree)
         println(s"sentence=${sentence.toString}")
-        println(s"tree=\n${tree.pennString()}")
-        println(s"json=\n${pretty(json)}")
+        //println(s"tree=\n${tree.pennString()}")
+        //println(s"json=\n${pretty(json)}")
       }
       println()
 
@@ -120,16 +130,76 @@ object FigTools {
         }
         for (imageFile <- imageFiles) {
           breakable {
-            val imp = try { IJ.openImage(imageFile.toString) }
+            var imp = try { IJ.openImage(imageFile.toString) }
             catch {
               case _: Throwable =>
                 Console.err.println(s"Could not open file $imageFile")
                 break
             }
+            new ImageConverter(imp).convertToGray8()
+            val binaryProc = new BinaryProcessor(new ByteProcessor(imp.getImage()))
+            binaryProc.autoThreshold()
+            val binaryImp = new ImagePlus(imp.getTitle, binaryProc)
+            val rt = new ResultsTable()
+            val particleAnalyzer = new ParticleAnalyzer(
+              ParticleAnalyzer.EXCLUDE_EDGE_PARTICLES|
+              ParticleAnalyzer.CLEAR_WORKSHEET|
+              ParticleAnalyzer.IN_SITU_SHOW,
+              Measurements.AREA|
+              Measurements.MEAN|
+              Measurements.MIN_MAX|
+              Measurements.RECT,
+              rt, 0.0, Double.PositiveInfinity)
+            if (!particleAnalyzer.analyze(binaryImp)) {
+              throw new RuntimeException("ParticleAnalyzer.analyze() returned false!")
+            }
+            val bundle = SavedModelBundle.load(
+              s"${System.getProperty("user.home")}/src/tensorflow-ocr/savedmodel/",
+              "serve")
+            val graph = bundle.graph()
+            val session = bundle.session()
+
+            for (i <- 0 until rt.getCounter()) {
+              val bx = rt.getValue("BX", i).toInt
+              val by = rt.getValue("BY", i).toInt
+              val width = rt.getValue("Width", i).toInt
+              val height = rt.getValue("Height", i).toInt
+
+              // use tesseract OCR
+              val instance = new Tesseract()
+              val bi = imp.getBufferedImage()
+              val text = instance.doOCR(bi, new Rectangle(bx, by, width, height)).trim
+              println(s"OCR text ($bx,$by,$width,$height)='$text'")
+
+              // use tensorflow-ocr
+              imp.setRoi(new Roi(bx, by, width, height))
+              val cropped = new ImagePlus()
+              cropped.setProcessor(imp.getProcessor().crop().resize(24, 24))
+              val bytes = cropped.getProcessor().getPixels.asInstanceOf[Array[Byte]]
+              val floats: Array[Float] = bytes.map(x=>(1.0 - (2 * (x+128)) / 255.0).asInstanceOf[Float])
+
+              for {
+                inputX <- Tensor.create(Array(24l, 24l), FloatBuffer.wrap(floats)).autoClosed
+                dropoutKeepProb <- Tensor.create(Array[Long](), FloatBuffer.wrap(Array(1f))).autoClosed
+                trainPhase <- Tensor.create(DataType.BOOL, Array[Long](),
+                  ByteBuffer.wrap(Array(0.asInstanceOf[Byte]))).autoClosed
+                result <- session.runner().
+                  feed("input/input_x", inputX).
+                  feed("state/dropout_keep_prob", dropoutKeepProb).
+                  feed("state/train_phase", trainPhase).
+                  fetch("model/prediction/Dense_96/add").
+                  run().get(0).autoClosed
+              } {
+                val output = result.copyTo(Array.ofDim[Float](1,96))
+                val (prob, best) = output(0).zipWithIndex.maxBy(_._1)
+                val ch = (best+32).toChar
+                println(s"Tensorflow detected character '$ch' with prob $prob")
+              }
+            }
           }
         }
-        if (!imageFiles.isEmpty) {
-          val cmd = (Seq("open") ++ imageFiles.map(_.toString))
+        if (imageFiles.nonEmpty) {
+          val cmd = Seq("open") ++ imageFiles.map(_.toString)
           cmd.!
         }
         else {

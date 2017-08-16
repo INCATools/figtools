@@ -180,19 +180,19 @@ object FigTools {
                 val cropped = new ImagePlus()
                 cropped.setProcessor(imp.getProcessor().crop().resize(24, 24))
                 val bytes = cropped.getProcessor().getPixels.asInstanceOf[Array[Byte]]
-                for (y <- 0 until 24) {
-                  for (x <- 0 until 24) {
-                    print(f"${bytes(y*24+x) & 0xFF}%03d ")
-                  }
-                  println()
-                }
+                //for (y <- 0 until 24) {
+                //  for (x <- 0 until 24) {
+                //    print(f"${bytes(y*24+x) & 0xFF}%03d ")
+                //  }
+                //  println()
+                //}
                 val floats: Array[Float] = bytes.map(x=>(1.0 - (2 * (x & 0xFF)) / 255.0).asInstanceOf[Float])
-                for (y <- 0 until 24) {
-                  for (x <- 0 until 24) {
-                    print(f"${floats(y*24+x)}%+1.2f ")
-                  }
-                  println()
-                }
+                //for (y <- 0 until 24) {
+                //  for (x <- 0 until 24) {
+                //    print(f"${floats(y*24+x)}%+1.2f ")
+                //  }
+                //  println()
+                //}
 
                 for {
                   inputX <- Tensor.create(Array(24l, 24l), FloatBuffer.wrap(floats)).autoClosed

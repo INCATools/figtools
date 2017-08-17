@@ -6,6 +6,7 @@ import sbt._
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
+import scala.sys.process._
 
 val Organization = "figtools"
 val Name = "figtools"
@@ -70,11 +71,14 @@ lazy val figtools = (project in file(".")).
       for (classifier <- artifactsMap.keys) {
         val artifacts = artifactsMap(classifier).mkString(" ")
         val classifierOpt = if (classifier.isEmpty) "" else s"-C $classifier"
-        val cmd = s"java -noverify -XX:+UseG1GC -cp $coursier coursier.Bootstrap fetch $repos $artifacts $classifierOpt"
+        var cmd = s"java -cp $coursier coursier.Bootstrap resolve $repos $artifacts $classifierOpt"
         println(s"running cmd: $cmd")
-        jarsSet ++= Process(cmd).lines_!.
+        val transArtifacts = cmd.lineStream_!.map(x => x.replaceFirst(""":default$""","")).mkString(" ")
+        cmd = s"java -cp $coursier coursier.Bootstrap fetch $repos $transArtifacts $classifierOpt"
+        println(s"running cmd: $cmd")
+        jarsSet ++= cmd.lineStream_!.
           map(x => x.replaceFirst(s"""^${Pattern.quote(System.getProperty("user.home"))}/(.*)$$""","""\$HOME/$1"""))
-        cmds += s"""java -noverify -XX:+UseG1GC -cp "$$0" coursier.Bootstrap fetch $repos $artifacts $classifierOpt"""
+        cmds += s"""java -cp "$$0" coursier.Bootstrap fetch $repos $transArtifacts $classifierOpt"""
       }
       val jars = jarsSet.mkString(" ")
 

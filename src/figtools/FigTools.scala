@@ -165,7 +165,7 @@ object FigTools {
                 val by = rt.getValue("BY", i).toInt
                 val width = rt.getValue("Width", i).toInt
                 val height = rt.getValue("Height", i).toInt
-                if (!(20 <= width && width <= 80 && 20 <= height && height <= 80)) {
+                if (!(14 <= width && width <= 80 && 14 <= height && height <= 80)) {
                   break
                 }
 

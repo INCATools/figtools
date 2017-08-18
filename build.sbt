@@ -73,7 +73,9 @@ lazy val figtools = (project in file(".")).
         val classifierOpt = if (classifier.isEmpty) "" else s"-C $classifier"
         var cmd = s"java -cp $coursier coursier.Bootstrap resolve $repos $artifacts $classifierOpt"
         println(s"running cmd: $cmd")
-        val transArtifacts = cmd.lineStream_!.map(x => x.replaceFirst(""":default$""","")).mkString(" ")
+        val transArtifacts =
+          if (classifier.isEmpty) cmd.lineStream_!.map(x => x.replaceFirst(""":default$""","")).mkString(" ")
+          else artifacts
         cmd = s"java -cp $coursier coursier.Bootstrap fetch $repos $transArtifacts $classifierOpt"
         println(s"running cmd: $cmd")
         jarsSet ++= cmd.lineStream_!.
@@ -91,7 +93,7 @@ for jar in $$jars; do
     break
   fi
 done
-exec java $${DEBUG+-agentlib:jdwp=transport=dt_socket,server=y,address=$DebugPort,suspend=n} -noverify -XX:+UseG1GC $$JAVA_OPTS -cp "$$0:$${jars// /:}" "${(mainClass in assembly).value.get}" "$$@"
+TF_CPP_MIN_LOG_LEVEL=3 exec java $${DEBUG+-agentlib:jdwp=transport=dt_socket,server=y,address=$DebugPort,suspend=n} -noverify -XX:+UseG1GC $$JAVA_OPTS -cp "$$0:$${jars// /:}" "${(mainClass in assembly).value.get}" "$$@"
 """
       Files.write(Paths.get((baseDirectory.value / "target" / s"${(mainClass in assembly).value.get}.prependShellScript.sh").toString),
         prependShellScript.getBytes(StandardCharsets.UTF_8))

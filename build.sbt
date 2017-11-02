@@ -45,7 +45,6 @@ lazy val figtools = (project in file(".")).
     },
     updatePrependScript := {
       val ivyReportFile = (ivyReport in Compile).value
-      //val ivyReportFile = baseDirectory.value / "target/scala-2.12/resolution-cache/reports/figtools-figtools_2.12-compile.xml"
       val xml = XML.loadFile(ivyReportFile)
       val (deps, depsScript) = (for {
         artifact <- (xml \\ "ivy-report" \\ "dependencies" \ "module" \ "revision" \ "artifacts" \ "artifact")

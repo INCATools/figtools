@@ -1,6 +1,4 @@
 package figtools
-import java.awt.Rectangle
-import java.nio.{ByteBuffer, FloatBuffer}
 import java.util.Properties
 import java.util.regex.Pattern
 
@@ -15,25 +13,20 @@ import scopt.OptionParser
 import sys.process._
 import collection.JavaConverters._
 import edu.stanford.nlp.util.logging.RedwoodConfiguration
-import ij.{IJ, ImageJ, ImagePlus, WindowManager}
-import ij.gui.Roi
+import ij.{ImageJ}
 import ij.io.Opener
-import ij.measure.{Measurements, ResultsTable}
-import ij.plugin.filter.ParticleAnalyzer
-import ij.plugin.frame.RoiManager
-import ij.process.{BinaryProcessor, ByteProcessor, ImageConverter}
+import net.sourceforge.tess4j.ITessAPI.TessPageIteratorLevel
 
 import util.control.Breaks._
 import scala.collection.mutable.ArrayBuffer
 import net.sourceforge.tess4j.Tesseract
-import org.tensorflow._
 
 
 object FigTools {
   implicit val formats: DefaultFormats.type = org.json4s.DefaultFormats
 
   case class Config(mode: String = "",
-                    pdfExportResolution: Int = 150)
+                    pdfExportResolution: Int = 300)
 
   def main(args: Array[String]): Unit = {
     val parser = new OptionParser[Config]("figtools") {
@@ -82,11 +75,6 @@ object FigTools {
     // start an embedded ImageJ instance
     val imagej = new ImageJ(ImageJ.EMBEDDED)
     imagej.exitWhenQuitting(true)
-
-    // get the ROI Manager instance
-    IJ.run("ROI Manager...")
-    val roiManager = WindowManager.getFrame("ROI Manager").asInstanceOf[RoiManager]
-    ParticleAnalyzer.setRoiManager(roiManager)
 
     val dir = "." / "."
     for (datapackage <- dir.listRecursively.filter(_.name == "datapackage.json")) {
@@ -144,98 +132,26 @@ object FigTools {
             println(s"File $imageFile contains no images, skipping")
             break
           }
-          var imp = new Opener().openImage(imageFiles.head.toString())
+          val imp = new Opener().openImage(imageFiles.head.toString())
           if (imp == null) {
             println(s"Could not open image file $imageFile, skipping")
             break
           }
-          new ImageConverter(imp).convertToGray8()
-          val binaryProc = new BinaryProcessor(new ByteProcessor(imp.getImage))
-          binaryProc.autoThreshold()
-          imp = new ImagePlus(imp.getTitle, binaryProc)
           imp.show()
-          val rt = new ResultsTable()
-          val particleAnalyzer = new ParticleAnalyzer(
-              ParticleAnalyzer.SHOW_RESULTS |
-              ParticleAnalyzer.SHOW_SUMMARY |
-              ParticleAnalyzer.ADD_TO_MANAGER |
-              ParticleAnalyzer.EXCLUDE_EDGE_PARTICLES |
-              ParticleAnalyzer.CLEAR_WORKSHEET |
-              ParticleAnalyzer.IN_SITU_SHOW,
-            Measurements.AREA |
-              Measurements.MEAN |
-              Measurements.MIN_MAX |
-              Measurements.RECT,
-            rt, 0.0, Double.PositiveInfinity)
-          if (!particleAnalyzer.analyze(imp)) {
-            throw new RuntimeException("ParticleAnalyzer.analyze() returned false!")
+
+          // use tesseract OCR
+          val instance = new Tesseract()
+          val bi = imp.getBufferedImage
+          val words = instance.getWords(bi, TessPageIteratorLevel.RIL_WORD).asScala
+          for (word <- words) {
+            val box = word.getBoundingBox
+            val confidence = word.getConfidence
+            val text = word.getText
+            println(s"Tesseract OCR text: (box: $box, confidence: $confidence)='$text'")
           }
 
-          val bundle = SavedModelBundle.load(
-            s"${System.getProperty("user.home")}/src/tensorflow-ocr/savedmodel/",
-            "serve")
-          val session = bundle.session()
+          SegmentCaption.segmentCaption(description_nohtml)
 
-          val WidthLimits = (14, 80)
-          val HeightLimits = (14, 80)
-
-          for (i <- (0 until rt.getCounter).reverse) {
-            breakable {
-              val bx = rt.getValue("BX", i).toInt
-              val by = rt.getValue("BY", i).toInt
-              val width = rt.getValue("Width", i).toInt
-              val height = rt.getValue("Height", i).toInt
-              if (!(WidthLimits._1 <= width && width <= WidthLimits._2 &&
-                    HeightLimits._1 <= height && height <= HeightLimits._2))
-              {
-                rt.deleteRow(i)
-                roiManager.deselect(roiManager.getRoi(i))
-                break
-              }
-
-              // use tesseract OCR
-              val instance = new Tesseract()
-              val bi = imp.getBufferedImage
-              val text = instance.doOCR(bi, new Rectangle(bx, by, width, height)).trim
-              println(s"OCR text ($bx,$by,$width,$height)='$text'")
-
-              // use tensorflow-ocr
-              imp.setRoi(new Roi(bx, by, width, height))
-              val cropped = new ImagePlus()
-              cropped.setProcessor(imp.getProcessor.crop().resize(24, 24))
-              val bytes = cropped.getProcessor.getPixels.asInstanceOf[Array[Byte]]
-              //for (y <- 0 until 24) {
-              //  for (x <- 0 until 24) {
-              //    print(f"${bytes(y*24+x) & 0xFF}%03d ")
-              //  }
-              //  println()
-              //}
-              val floats: Array[Float] = bytes.map(x => (1.0 - (2 * (x & 0xFF)) / 255.0).asInstanceOf[Float])
-              //for (y <- 0 until 24) {
-              //  for (x <- 0 until 24) {
-              //    print(f"${floats(y*24+x)}%+1.2f ")
-              //  }
-              //  println()
-              //}
-              for {
-                inputX <- Tensor.create(Array(24l, 24l), FloatBuffer.wrap(floats)).autoClosed
-                dropoutKeepProb <- Tensor.create(Array[Long](), FloatBuffer.wrap(Array(1f))).autoClosed
-                trainPhase <- Tensor.create(DataType.BOOL, Array[Long](),
-                  ByteBuffer.wrap(Array(0.asInstanceOf[Byte]))).autoClosed
-                result <- session.runner().
-                  feed("input/input_x", inputX).
-                  feed("state/dropout_keep_prob", dropoutKeepProb).
-                  feed("state/train_phase", trainPhase).
-                  fetch("model/prediction/Dense_96/add").
-                  run().get(0).autoClosed
-              } {
-                val output = result.copyTo(Array.ofDim[Float](1, 96))
-                val (prob, best) = output(0).zipWithIndex.maxBy(_._1)
-                val ch = (best + 32).toChar
-                println(s"Tensorflow detected character '$ch' with prob $prob")
-              }
-            }
-          }
           while (imp.isVisible) {
             Thread.sleep(200)
           }

@@ -1,11 +1,8 @@
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Paths}
-import java.util.regex.Pattern
+import scala.xml.XML
 
 import sbt._
-
-import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
 import scala.sys.process._
 
 val Organization = "figtools"
@@ -14,7 +11,7 @@ val Version = "0.1.0"
 val ScalaVersion = "2.12.3"
 val DebugPort = 5005
 
-val updatePrependScript = TaskKey[Unit]("update-prepend-script")
+lazy val updatePrependScript = TaskKey[String]("updatePrependScript")
 lazy val figtools = (project in file(".")).
   settings(
     name := Name,
@@ -27,82 +24,48 @@ lazy val figtools = (project in file(".")).
     javaSource in Test := baseDirectory.value / "test/src",
     resourceDirectory in Compile := baseDirectory.value / "resources",
     resourceDirectory in Test := baseDirectory.value / "test/resources",
-    mainClass in assembly := Some("figtools.FigTools"),
+    mainClass in Compile := Some("figtools.FigTools"),
     resolvers += "imagej" at "http://maven.imagej.net/content/repositories/thirdparty/",
     resolvers += "imagej public" at "http://maven.imagej.net/content/groups/public/",
     resolvers += "Sonatype Releases" at "https://oss.sonatype.org/content/repositories/releases/",
     libraryDependencies ++= Seq(
-      "com.github.scopt" % "scopt_2.12" % "3.6.0",
+      "com.github.scopt" %% "scopt" % "3.6.0",
       "net.imagej" % "ij" % "1.50i",
       "net.sourceforge.tess4j" % "tess4j" % "3.4.0",
       "edu.stanford.nlp" % "stanford-corenlp" % "3.8.0",
       "edu.stanford.nlp" % "stanford-corenlp" % "3.8.0" classifier "models-english",
-      "org.json4s" % "json4s-jackson_2.12" % "3.5.3",
-      "com.github.pathikrit" % "better-files_2.12" % "3.0.0",
+      "org.json4s" %% "json4s-jackson" % "3.5.3",
+      "com.github.pathikrit" %% "better-files" % "3.0.0",
       "org.tensorflow" % "tensorflow" % "1.2.1",
-      "com.beachape" % "enumeratum_2.12" % "1.5.12",
-      "com.lihaoyi" % "fastparse_2.12" % "1.0.0"
+      "com.beachape" %% "enumeratum" % "1.5.12",
+      "com.lihaoyi" %% "fastparse" % "1.0.0"
     ),
-    //logLevel in assembly := Level.Debug,
-    assemblyOutputPath in assembly := baseDirectory.value / "bin" / name.value,
-    assemblyJarName in assembly := name.value,
-    assemblyOption in assembly := (assemblyOption in assembly).value.copy(cacheOutput = false),
-    assemblyExcludedJars in assembly := {
-      (fullClasspath in assembly).value.filter(_.data.getName != "coursier.jar")
+    artifactPath in (Compile, packageBin) := {
+      baseDirectory.value / "bin" / name.value
     },
     updatePrependScript := {
-      val coursier = (baseDirectory.value / "lib" / "coursier.jar").toString
-      val artifactsMap = new mutable.HashMap[String, mutable.Set[String]] with mutable.MultiMap[String, String]
-      for (dep <- libraryDependencies.value) {
-        val classifiers = dep.explicitArtifacts.flatMap(_.classifier)
-        if (classifiers.isEmpty) {
-          artifactsMap.addBinding("", dep.toString())
-        }
-        else {
-          for (classifier <- classifiers) {
-            artifactsMap.addBinding(classifier, dep.toString())
-          }
-        }
-      }
-      val repos = resolvers.value.map(
-        _.toString.replaceFirst("""^[^:]*:\s*""", "").split(" ").
-          map(x => s"-r $x").mkString(" ")).mkString(" ")
-
-      val jarsSet = mutable.SortedSet[String]()
-      val cmds = ArrayBuffer[String]()
-      for (classifier <- artifactsMap.keys) {
-        val artifacts = artifactsMap(classifier).mkString(" ")
-        val classifierOpt = if (classifier.isEmpty) "" else s"-C $classifier"
-        var cmd = s"java -cp $coursier coursier.Bootstrap resolve $repos $artifacts $classifierOpt"
-        println(s"running cmd: $cmd")
-        val transArtifacts =
-          if (classifier.isEmpty) cmd.lineStream_!.map(x => x.replaceFirst(""":default$""","")).mkString(" ")
-          else artifacts
-        cmd = s"java -cp $coursier coursier.Bootstrap fetch $repos $transArtifacts $classifierOpt"
-        println(s"running cmd: $cmd")
-        jarsSet ++= cmd.lineStream_!.
-          map(x => x.replaceFirst(s"""^${Pattern.quote(System.getProperty("user.home"))}/(.*)$$""","""\$HOME/$1"""))
-        cmds += s"""java -cp "$$0" coursier.Bootstrap fetch $repos $transArtifacts $classifierOpt"""
-      }
-      val jars = jarsSet.mkString(" ")
-
+      val ivyReportFile = (ivyReport in Compile).value
+      //val ivyReportFile = baseDirectory.value / "target/scala-2.12/resolution-cache/reports/figtools-figtools_2.12-compile.xml"
+      val xml = XML.loadFile(ivyReportFile)
+      val (deps, depsScript) = (for {
+        artifact <- (xml \\ "ivy-report" \\ "dependencies" \ "module" \ "revision" \ "artifacts" \ "artifact")
+        location = (artifact \ "@location").text.replaceFirst("""^/+[^/]+/+[^/]+""","\\$HOME")
+        originLocation = (artifact \ "origin-location" \ "@location").text
+      } yield {(location,s"""test ! -e "$location" && mkdir -p "${location.replaceFirst("""[^/]+$""","")}" && (set -x; curl -Sso "$location" '$originLocation')""")}).unzip
       val prependShellScript =
         s"""#!/usr/bin/env bash
-jars="$jars"
-for jar in $$jars; do
-  if [[ ! -e $$jar ]]; then
-    ${cmds.mkString("\n    ")}
-    break
-  fi
-done
-TF_CPP_MIN_LOG_LEVEL=3 exec java $${DEBUG+-agentlib:jdwp=transport=dt_socket,server=y,address=$DebugPort,suspend=n} -noverify -XX:+UseG1GC $$JAVA_OPTS -cp "$$0:$${jars// /:}" "${(mainClass in assembly).value.get}" "$$@"
+${depsScript.mkString("\n")}
+TF_CPP_MIN_LOG_LEVEL=3 exec java $${DEBUG+-agentlib:jdwp=transport=dt_socket,server=y,address=$DebugPort,suspend=n} -noverify -XX:+UseG1GC $$JAVA_OPTS -cp "$$0:${deps.mkString(":")}" "${(mainClass in Compile).value.get}" "$$@"
 """
-      Files.write(Paths.get((baseDirectory.value / "target" / s"${(mainClass in assembly).value.get}.prependShellScript.sh").toString),
-        prependShellScript.getBytes(StandardCharsets.UTF_8))
+      val prependScript = (baseDirectory.value / "target" / s"${(mainClass in Compile).value.get}.prependShellScript.sh").toString
+      Files.write(Paths.get(prependScript), prependShellScript.getBytes(StandardCharsets.UTF_8))
+      prependScript
     },
-    assemblyOption in assembly := (assemblyOption in assembly).value.copy(prependShellScript = {
-      val scriptFile = baseDirectory.value/"target"/s"${(mainClass in assembly).value.get}.prependShellScript.sh"
-      val prepend = scala.io.Source.fromFile(scriptFile.toString).mkString
-      Some(List(prepend))
-    })
+    packageBin in Compile := {
+      val original = (packageBin in Compile).value
+      //val prependScript = (baseDirectory.value / "target" / s"${(mainClass in Compile).value.get}.prependShellScript.sh").toString
+      val prependScript = updatePrependScript.value
+      Seq("bash","-c",s"""cat '$prependScript' '$original' >"$original.$$$$" && mv "$original.$$$$" '$original' && chmod +x '$original'""").!
+      original
+    }
   )

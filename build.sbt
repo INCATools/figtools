@@ -52,7 +52,7 @@ lazy val figtools = (project in file(".")).
         location = (artifact \ "@location").text.
           replaceFirst(s"""^${Pattern.quote(System.getProperty("user.home"))}""","\\$HOME")
         originLocation = (artifact \ "origin-location" \ "@location").text
-      } yield {(location,s"""test ! -e "$location" && mkdir -p "${location.replaceFirst("""[^/]+$""","")}" && (set -x; curl -Sso "$location" '$originLocation')""")}).unzip
+      } yield {(location,s"""test ! -e "$location" && mkdir -p "${new File(location).getParent}" && (set -x; curl -Sso "$location" '$originLocation')""")}).unzip
       val prependShellScript =
         s"""#!/usr/bin/env bash
 ${depsScript.mkString("\n")}

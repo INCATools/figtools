@@ -1,5 +1,6 @@
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Paths}
+import java.util.regex.Pattern
 import scala.xml.XML
 
 import sbt._
@@ -48,7 +49,8 @@ lazy val figtools = (project in file(".")).
       val xml = XML.loadFile(ivyReportFile)
       val (deps, depsScript) = (for {
         artifact <- (xml \\ "ivy-report" \\ "dependencies" \ "module" \ "revision" \ "artifacts" \ "artifact")
-        location = (artifact \ "@location").text.replaceFirst("""^/+[^/]+/+[^/]+""","\\$HOME")
+        location = (artifact \ "@location").text.
+          replaceFirst(s"""^${Pattern.quote(System.getProperty("user.home"))}""","\\$HOME")
         originLocation = (artifact \ "origin-location" \ "@location").text
       } yield {(location,s"""test ! -e "$location" && mkdir -p "${location.replaceFirst("""[^/]+$""","")}" && (set -x; curl -Sso "$location" '$originLocation')""")}).unzip
       val prependShellScript =

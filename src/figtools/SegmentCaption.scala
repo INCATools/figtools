@@ -50,7 +50,6 @@ object SegmentCaption {
       result match {
         case Parsed.Success(value, successIndex) => {
           Console.println(s"value=$value")
-
         }
         case Parsed.Failure(parser, successIndcex, _) => ()
       }

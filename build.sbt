@@ -62,8 +62,8 @@ TF_CPP_MIN_LOG_LEVEL=3 exec java $${DEBUG+-agentlib:jdwp=transport=dt_socket,ser
     },
     packageBin in Compile := {
       val original = (packageBin in Compile).value
-      //val prependScript = (baseDirectory.value / "target" / s"${(mainClass in Compile).value.get}.prependShellScript.sh").toString
-      val prependScript = updatePrependScript.value
+      //val prependScript = updatePrependScript.value
+      val prependScript = (baseDirectory.value / "target" / s"${(mainClass in Compile).value.get}.prependShellScript.sh").toString
       Seq("bash","-c",s"""cat '$prependScript' '$original' >"$original.$$$$" && mv "$original.$$$$" '$original' && chmod +x '$original'""").!
       original
     }

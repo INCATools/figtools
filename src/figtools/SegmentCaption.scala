@@ -3,6 +3,7 @@ import scala.annotation.tailrec
 import enumeratum._
 import fastparse.all._
 
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.util.matching.Regex
 
@@ -47,9 +48,7 @@ object SegmentCaption {
   // upper roman
   // lower roman
   // numeric
-  def segmentCaption(caption: String): Seq[String] = {
-    var segments = ArrayBuffer[String]()
-
+  def segmentCaption(caption: String): Seq[Caption] = {
     // parse the caption labels
     var labels = ArrayBuffer[Label]()
     for (m <- """\([^\)]*?\)|\[[^\]]*?\]|\{[^\}]*?\}|(^|(?<=[.;,:-]\s{1,4}))[^\(\[\{\s]\S*[\]\}\).]""".r.findAllMatchIn(caption)) {
@@ -60,43 +59,104 @@ object SegmentCaption {
           //Console.println(s"value=$value")
           labels += Label(value, m)
         }
-        case Parsed.Failure(parser, successIndcex, _) => ()
+        case Parsed.Failure(parser, successIndex, _) => ()
       }
     }
 
     // flatten out the labels
-    var labelValues = ArrayBuffer[LabelValue.Value]()
+    var labelValues = ArrayBuffer[(LabelValue.Value, Label)]()
+    val label2LabelValues = mutable.Map[Label,ArrayBuffer[LabelValue.Value]]()
     for (label <- labels) {
       for (value <- label.labelType.labelValues.values) {
-        value match {
+        val lv = (value match {
           case LabelValue.Range(start, stop) =>
-            if (start.seriesType == stop.seriesType) makeSeries(start, stop)
-            else List(start, stop)
-          case LabelValue.Value(_,_) => List(value)
+            if (start.seriesType == stop.seriesType) makeSeries(start, stop).map(l=>(l,label))
+            else List((start, label), (stop, label))
+          case v@LabelValue.Value(_,_) => List((v,label))
+        })
+        labelValues ++= lv
+        for (llvv <- lv) {
+          if (!label2LabelValues.contains(llvv._2)) label2LabelValues(llvv._2) = ArrayBuffer()
+          label2LabelValues(llvv._2) += llvv._1
         }
       }
     }
     //score the sets
-    val sortedLabelValues = labelValues.sortBy(getIndex)
-    val labelValues2order = sortedLabelValues.zipWithIndex
-    val order2labelValues = labelValues2order.map(_.swap)
-
-    var labelScores = Map[Label, Int]()
-    var romanLabelScores = Map[Label, Int]()
-    for (i <- 0 until labelValues.size) {
-      val labelValue = labelValues(i)
-      val next = if (i < labelValues.size-1) Some(labelValues(i+1)) else None
+    val labelIndexes = labelValues.zipWithIndex.toMap
+    val sortedLabelValues = labelValues.sortBy(x =>(getIndex(x._1.value, x._1.seriesType), labelIndexes(x)))
+    var series = ArrayBuffer[Series]()
+    for (seriesType <- SeriesType.values) {
+      var score = 0
+      for (i <- 0 until sortedLabelValues.size-1) {
+        val (labelValue, _) = sortedLabelValues(i)
+        val (next, _) = sortedLabelValues(i+1)
+        if (labelValue.seriesType == next.seriesType) {
+          score += 1
+          val index = getIndex(labelValue.value, seriesType)
+          val nextIndex = getIndex(next.value, seriesType)
+          for {index <- index
+               nextIndex <- nextIndex}
+          {
+            if (index+1 == nextIndex) score += 5
+          }
+        }
+      }
+      var includedLabels = ArrayBuffer[Label]()
+      for (i <- 0 until labelValues.size-1) {
+        val (labelValue, label) = labelValues(i)
+        val (next, _) = labelValues(i+1)
+        if (labelValue.seriesType == next.seriesType) {
+          score += 5
+          val index = getIndex(labelValue.value, seriesType)
+          val nextIndex = getIndex(next.value, seriesType)
+          for {index <- index
+               nextIndex <- nextIndex}
+          {
+            if (index+1 == nextIndex) score += 10
+          }
+          includedLabels += label
+        }
+      }
+      series += Series(seriesType, score, includedLabels)
     }
+    // extract the caption descriptions
+    val bestSet = series.sortBy(_.score).lastOption
+    var captions = ArrayBuffer[Caption]()
+    for (bestSet <- bestSet) {
+      var findAfter = true
+      for {lastLabel <- bestSet.labels.lastOption
+           _ <- """^\s*$""".r.findFirstMatchIn(caption.slice(lastLabel.regexMatch.end, caption.size))}
+      {
+        findAfter = false
+      }
 
-    segments.toList
+      for (i <- bestSet.labels.indices) {
+        val label = bestSet.labels(i)
+        val labelValues = label2LabelValues(label).map(_.value)
+        val labelIndexes = label2LabelValues(label).flatMap(l=>getIndex(l.value, l.seriesType))
+        val description = (findAfter match {
+          case true =>
+            val next = if (i > 0) bestSet.labels(i + 1).regexMatch.start else caption.size
+            caption.slice(label.regexMatch.end, next)
+          case false =>
+            val prev = if (i < bestSet.labels.size - 1) bestSet.labels(i - 1).regexMatch.end else 0
+            caption.slice(prev, label.regexMatch.start)
+        })
+        captions += Caption(labelValues, labelIndexes, description)
+      }
+    }
+    captions
   }
 
   def makeSeries(start: LabelValue.Value, stop: LabelValue.Value): Seq[LabelValue.Value] = {
-    val startIndex = getIndex(start)
-    val stopIndex = getIndex(stop)
+    val startIndex = getIndex(start.value, start.seriesType)
+    val stopIndex = getIndex(stop.value, stop.seriesType)
     var series = ArrayBuffer[LabelValue.Value]()
-    if (startIndex >= 0 && stopIndex >= 0) {
-      for (i <- startIndex to stopIndex) {
+    if (startIndex.isDefined && stopIndex.isDefined) {
+      for {startIndex <- startIndex
+           stopIndex <- stopIndex
+           i <- startIndex to stopIndex}
+      {
         series += getValue(i, start.seriesType)
       }
     }
@@ -106,11 +166,19 @@ object SegmentCaption {
     series
   }
 
-  def getIndex(value: LabelValue.Value): Int = {
-    value.seriesType match {
-      case SeriesType.AlphaLower | SeriesType.AlphaUpper => AlphabeticConverter().convert(value.value)
-      case SeriesType.Numeric => value.value.toInt
-      case SeriesType.RomanLower | SeriesType.RomanUpper => RomanNumberConverter().convert(value.value).getOrElse(-1)
+  def getIndex(value: String, seriesType: SeriesType): Option[Int] = {
+    seriesType match {
+      case SeriesType.AlphaLower if """^[a-z]+$""".r.findFirstIn(value).isDefined =>
+        Some(AlphabeticConverter().convert(value))
+      case SeriesType.AlphaUpper if """^[A-Z]+$""".r.findFirstIn(value).isDefined =>
+        Some(AlphabeticConverter().convert(value))
+      case SeriesType.Numeric if """^[0-9]+$""".r.findFirstIn(value).isDefined =>
+        Some(value.toInt)
+      case SeriesType.RomanLower if """^[ivxlcdm]+$""".r.findFirstIn(value).isDefined =>
+        RomanNumberConverter().convert(value)
+      case SeriesType.RomanUpper if """^[IVXLCDM]+$""".r.findFirstIn(value).isDefined =>
+        RomanNumberConverter().convert(value)
+      case _ => None
     }
   }
 
@@ -231,4 +299,10 @@ object SegmentCaption {
     case object AlphaLower extends SeriesType
     case object AlphaUpper extends SeriesType
   }
+
+  case class Series(seriesType: SeriesType,
+                    score: Int,
+                    labels: Seq[Label])
+
+  case class Caption(label: Seq[String], index: Seq[Int], description: String)
 }

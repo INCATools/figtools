@@ -39,7 +39,10 @@ lazy val figtools = (project in file(".")).
       "com.github.pathikrit" %% "better-files" % "3.0.0",
       "org.tensorflow" % "tensorflow" % "1.2.1",
       "com.beachape" %% "enumeratum" % "1.5.12",
-      "com.lihaoyi" %% "fastparse" % "1.0.0"
+      "com.lihaoyi" %% "fastparse" % "1.0.0",
+      "ch.qos.logback" % "logback-classic" % "1.2.3",
+      "com.typesafe.scala-logging" %% "scala-logging" % "3.7.2",
+      "com.lihaoyi" %% "pprint" % "0.5.3"
     ),
     artifactPath in (Compile, packageBin) := {
       baseDirectory.value / "bin" / name.value

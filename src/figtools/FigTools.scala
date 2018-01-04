@@ -3,6 +3,7 @@ import java.util.Properties
 import java.util.regex.Pattern
 
 import better.files._
+import com.typesafe.scalalogging.Logger
 import edu.stanford.nlp.ling.CoreAnnotations.SentencesAnnotation
 import edu.stanford.nlp.pipeline.{Annotation, StanfordCoreNLP}
 import edu.stanford.nlp.trees.Tree
@@ -13,7 +14,7 @@ import scopt.OptionParser
 import sys.process._
 import collection.JavaConverters._
 import edu.stanford.nlp.util.logging.RedwoodConfiguration
-import ij.{ImageJ}
+import ij.ImageJ
 import ij.io.Opener
 import net.sourceforge.tess4j.ITessAPI.TessPageIteratorLevel
 
@@ -23,6 +24,9 @@ import net.sourceforge.tess4j.Tesseract
 
 
 object FigTools {
+  val logger = Logger("FigTools")
+  val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
+
   implicit val formats: DefaultFormats.type = org.json4s.DefaultFormats
 
   case class Config(mode: String = "",
@@ -80,21 +84,21 @@ object FigTools {
     for (datapackage <- dir.listRecursively.filter(_.name == "datapackage.json")) {
       val json = parse(datapackage.contentAsString)
       val description_nohtml = (json \ "description_nohtml").extract[String]
-      println(s"file=$datapackage")
-      println(s"description_nohtml=\n$description_nohtml")
+      logger.info(s"file=$datapackage")
+      logger.info(s"description_nohtml=\n$description_nohtml")
 
       val document = new Annotation(description_nohtml)
       pipeline.annotate(document)
       val sentences = document.get(classOf[SentencesAnnotation])
 
       for (sentence <- sentences.asScala) {
-        println(s"sentence=${sentence.toString}")
+        logger.info(s"sentence=${sentence.toString}")
         //val tree = sentence.get(classOf[TreeAnnotation])
         //val json = treeToJSONObject(tree)
-        //println(s"tree=\n${tree.pennString()}")
-        //println(s"json=\n${pretty(json)}")
+        //logger.info(s"tree=\n${tree.pennString()}")
+        //logger.info(s"json=\n${pretty(json)}")
       }
-      println()
+      logger.info("")
 
       val resources = (json \ "resources").extract[List[JValue]]
       for (resource <- resources) {
@@ -102,7 +106,7 @@ object FigTools {
           val name = (resource \ "name").extract[String]
           val imageFile = datapackage.parent / name
           if (!imageFile.toString.matches("""(?i).*\.(png|jpe?g|tiff?|pdf)""")) {
-            println(s"Skipping non-image file $imageFile")
+            logger.info(s"Skipping non-image file $imageFile")
             break
           }
           val imageFiles = ArrayBuffer(imageFile)
@@ -125,16 +129,16 @@ object FigTools {
             Console.err.println(s"Could not find file $imageFile")
           }
           if (imageFiles.size > 1) {
-            println(s"File $imageFile contains more than one image, skipping")
+            logger.warn(s"File $imageFile contains more than one image, skipping")
             break
           }
           if (imageFiles.isEmpty) {
-            println(s"File $imageFile contains no images, skipping")
+            logger.info(s"File $imageFile contains no images, skipping")
             break
           }
           val imp = new Opener().openImage(imageFiles.head.toString())
           if (imp == null) {
-            println(s"Could not open image file $imageFile, skipping")
+            logger.warn(s"Could not open image file $imageFile, skipping")
             break
           }
           imp.show()
@@ -147,10 +151,11 @@ object FigTools {
             val box = word.getBoundingBox
             val confidence = word.getConfidence
             val text = word.getText
-            println(s"Tesseract OCR text: (box: $box, confidence: $confidence)='$text'")
+            logger.info(s"Tesseract OCR text: (box: ${pp(box)}, confidence: $confidence)='$text'")
           }
 
-          SegmentCaption.segmentCaption(description_nohtml)
+          val captionGroups = SegmentCaption.segmentCaption(description_nohtml)
+          logger.info(s"captionGroups=${pp(captionGroups)}")
 
           while (imp.isVisible) {
             Thread.sleep(200)

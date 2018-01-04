@@ -6,24 +6,29 @@ import fastparse.all._
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.util.matching.Regex
+import com.typesafe.scalalogging.Logger
 
 object SegmentCaption {
-  object Parser {
-    private val upper = P(CharIn('A' to 'Z'))
-    private val lower = P(CharIn('a' to 'z'))
-    private val digits = P(CharIn('0' to '9'))
-    private val romanUpper = P(CharIn(RomanNumberConverter.toArabic.keys.toList))
-    private val romanLower = P(CharIn(RomanNumberConverter.toArabic.keys.map(_.toLower).toList))
-    private val whitespace = P(CharIn(Seq(' ', '\n', '\t', '\r')))
-    private val label = P((
+  val logger = Logger("SegmentCaption")
+  val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
+
+  def segmentCaption(caption: String): Seq[CaptionGroup] = {
+    // Label Parser Grammar
+    val upper = P(CharIn('A' to 'Z'))
+    val lower = P(CharIn('a' to 'z'))
+    val digits = P(CharIn('0' to '9'))
+    //val romanUpper = P(CharIn(RomanNumberConverter.toArabic.keys.toList))
+    //val romanLower = P(CharIn(RomanNumberConverter.toArabic.keys.map(_.toLower).toList))
+    val whitespace = P(CharIn(Seq(' ', '\n', '\t', '\r')))
+    val label = P((
       upper.rep(min = 1, max = 2).!.map(l=>LabelValue.Value(l.mkString(""), SeriesType.AlphaUpper)) |
-      lower.rep(min = 1, max = 2).!.map(l=>LabelValue.Value(l.mkString(""), SeriesType.AlphaLower)) |
-      digits.rep(min = 1, max = 2).!.map(l=>LabelValue.Value(l.mkString(""), SeriesType.Numeric))) ~ ".".?)
-    private val rangeDelim = P("-" | (whitespace.rep(1) ~ StringInIgnoreCase("to", "through", "until") ~ whitespace.rep(1)))
-    private val labelRange = P(whitespace.rep ~ (label ~ (rangeDelim ~ label).?).map{
+        lower.rep(min = 1, max = 2).!.map(l=>LabelValue.Value(l.mkString(""), SeriesType.AlphaLower)) |
+        digits.rep(min = 1, max = 2).!.map(l=>LabelValue.Value(l.mkString(""), SeriesType.Numeric))) ~ ".".?)
+    val rangeDelim = P("-" | (whitespace.rep(1) ~ StringInIgnoreCase("to", "through", "until") ~ whitespace.rep(1)))
+    val labelRange = P(whitespace.rep ~ (label ~ (rangeDelim ~ label).?).map{
       case (start: LabelValue.Value, stop: Option[LabelValue.Value])=>
         stop match {
-          case Some(stop) => LabelValue.Range(start, stop)
+          case Some(s) => LabelValue.Range(start, s)
           case None => start
         }
     })
@@ -40,112 +45,115 @@ object SegmentCaption {
     val curlyParen = P((labelRanges ~ "}").map(LabelType(_, ParensType.Curly, EnclosureType.HalfOpen)))
     val curlyParens = P(("{" ~ labelRanges ~ "}").map(LabelType(_, ParensType.Curly, EnclosureType.Closed)))
     val open = P(labelRanges.map(LabelType(_, ParensType.None, EnclosureType.Open)))
-    val labels = P(parens | blockParens | curlyParens | paren | blockParen | curlyParen | open)
-  }
+    val labelParser = P(parens | blockParens | curlyParens | paren | blockParen | curlyParen | open)
 
-  // upper alpha
-  // lower alpha
-  // upper roman
-  // lower roman
-  // numeric
-  def segmentCaption(caption: String): Seq[Caption] = {
     // parse the caption labels
     var labels = ArrayBuffer[Label]()
     for (m <- """\([^\)]*?\)|\[[^\]]*?\]|\{[^\}]*?\}|(^|(?<=[.;,:-]\s{1,4}))[^\(\[\{\s]\S*[\]\}\).]""".r.findAllMatchIn(caption)) {
-      val result = Parser.labels.parse(m.group(0))
-      //Console.println(s"""match="$m", result=$result""")
+      val result = labelParser.parse(m.group(0))
       result match {
-        case Parsed.Success(value, successIndex) => {
-          //Console.println(s"value=$value")
-          labels += Label(value, m)
-        }
-        case Parsed.Failure(parser, successIndex, _) => ()
+        case Parsed.Success(value, _) =>
+          val label = Label(value, m, labels.length)
+          labels += label
+          logger.debug(s"label=${pp(label)}")
+        case Parsed.Failure(_, _, _) => ()
       }
     }
 
     // flatten out the labels
-    var labelValues = ArrayBuffer[(LabelValue.Value, Label)]()
-    val label2LabelValues = mutable.Map[Label,ArrayBuffer[LabelValue.Value]]()
-    for (label <- labels) {
+    val labelValues = ArrayBuffer[(LabelValue.Value, Label)]()
+    val label2Values = mutable.Map[Label,Seq[LabelValue.Value]]()
+    for ((label, i) <- labels.zipWithIndex) {
+      val labelVals = ArrayBuffer[LabelValue.Value]()
       for (value <- label.labelType.labelValues.values) {
-        val lv = (value match {
+        val lv = value match {
           case LabelValue.Range(start, stop) =>
-            if (start.seriesType == stop.seriesType) makeSeries(start, stop).map(l=>(l,label))
-            else List((start, label), (stop, label))
-          case v@LabelValue.Value(_,_) => List((v,label))
-        })
-        labelValues ++= lv
-        for (llvv <- lv) {
-          if (!label2LabelValues.contains(llvv._2)) label2LabelValues(llvv._2) = ArrayBuffer()
-          label2LabelValues(llvv._2) += llvv._1
+            if (start.seriesType == stop.seriesType)
+              makeSeries(start, stop)
+            else Seq(start, stop)
+          case v@LabelValue.Value(_,_) => Seq(v)
         }
+        labelVals ++= lv
+        labelValues ++= lv.map(l=>(l, label))
       }
+      label2Values(label) = labelVals
     }
+    logger.debug(s"labelValues=${pp(labelValues)}")
+    logger.debug(s"label2Values=${pp(label2Values)}")
+
     //score the sets
-    val labelIndexes = labelValues.zipWithIndex.toMap
-    val sortedLabelValues = labelValues.sortBy(x =>(getIndex(x._1.value, x._1.seriesType), labelIndexes(x)))
     var series = ArrayBuffer[Series]()
     for (seriesType <- SeriesType.values) {
+      logger.debug(s"testing seriesType ${pp(seriesType)}")
+
+      val sortedLabelValues = labelValues.sortBy(x =>(
+        getIndex(x._1.value, seriesType),
+        x._2.labelIndex))
+      logger.debug(s"sortedLabelValues=${pp(sortedLabelValues)}")
+
       var score = 0
       for (i <- 0 until sortedLabelValues.size-1) {
         val (labelValue, _) = sortedLabelValues(i)
         val (next, _) = sortedLabelValues(i+1)
-        if (labelValue.seriesType == next.seriesType) {
-          score += 1
-          val index = getIndex(labelValue.value, seriesType)
-          val nextIndex = getIndex(next.value, seriesType)
-          for {index <- index
-               nextIndex <- nextIndex}
-          {
+        for {index <- getIndex(labelValue.value, seriesType)} {
+          if (i == 0 && index != 0) score -= index*5
+          for {nextIndex <- getIndex(next.value, seriesType)} {
             if (index+1 == nextIndex) score += 5
           }
         }
       }
-      var includedLabels = ArrayBuffer[Label]()
-      for (i <- 0 until labelValues.size-1) {
+      var includedLabels = mutable.Set[Label]()
+      for (i <- labelValues.indices) {
         val (labelValue, label) = labelValues(i)
-        val (next, _) = labelValues(i+1)
-        if (labelValue.seriesType == next.seriesType) {
-          score += 5
-          val index = getIndex(labelValue.value, seriesType)
-          val nextIndex = getIndex(next.value, seriesType)
-          for {index <- index
-               nextIndex <- nextIndex}
-          {
-            if (index+1 == nextIndex) score += 10
-          }
+        for {index <- getIndex(labelValue.value, seriesType)} {
           includedLabels += label
+          score += 1
+          if (i < labelValues.size-1) {
+            val (next, _) = labelValues(i+1)
+            for {nextIndex <- getIndex(next.value, seriesType)} {
+              if (index+1 == nextIndex) score += 10
+            }
+          }
         }
       }
-      series += Series(seriesType, score, includedLabels)
+      series += Series(seriesType, score, includedLabels.toList.sortBy(_.labelIndex))
     }
-    // extract the caption descriptions
-    val bestSet = series.sortBy(_.score).lastOption
-    var captions = ArrayBuffer[Caption]()
-    for (bestSet <- bestSet) {
-      var findAfter = true
-      for {lastLabel <- bestSet.labels.lastOption
-           _ <- """^\s*$""".r.findFirstMatchIn(caption.slice(lastLabel.regexMatch.end, caption.size))}
-      {
-        findAfter = false
-      }
+    logger.debug(s"series=${pp(series)}")
 
-      for (i <- bestSet.labels.indices) {
-        val label = bestSet.labels(i)
-        val labelValues = label2LabelValues(label).map(_.value)
-        val labelIndexes = label2LabelValues(label).flatMap(l=>getIndex(l.value, l.seriesType))
-        val description = (findAfter match {
-          case true =>
-            val next = if (i > 0) bestSet.labels(i + 1).regexMatch.start else caption.size
-            caption.slice(label.regexMatch.end, next)
-          case false =>
-            val prev = if (i < bestSet.labels.size - 1) bestSet.labels(i - 1).regexMatch.end else 0
-            caption.slice(prev, label.regexMatch.start)
-        })
-        captions += Caption(labelValues, labelIndexes, description)
+    // Try to determine if the description precedes or follows the label caption
+    val findAfter = labels.lastOption.flatMap(l=>"""^\s*$""".r.findFirstMatchIn(caption.slice(l.regexMatch.end, caption.length))).isEmpty
+
+    val seenLabels = mutable.Set[Label]()
+    val captionGroups = ArrayBuffer[CaptionGroup]()
+    for (set <- series.sortBy(_.score).reverse) {
+      val captions = ArrayBuffer[Caption]()
+      val usedLabels = mutable.Set[Label]()
+      for ((label, i) <- set.labels.zipWithIndex) {
+        if (!seenLabels.contains(label)) {
+          seenLabels += label
+          usedLabels += label
+          val labelValues = label2Values(label).map(_.value)
+          val labelIndexes = label2Values(label).flatMap(l=>getIndex(l.value, set.seriesType))
+
+          val description = if (findAfter) {
+            val next = if (i < set.labels.size - 1) set.labels(i + 1).regexMatch.start else caption.length
+            caption.slice(label.regexMatch.start, next)
+          } else {
+            val prev = if (i > 0) set.labels(i - 1).regexMatch.end else 0
+            caption.slice(prev, label.regexMatch.end)
+          }
+          captions += Caption(labelValues, labelIndexes, description)
+        }
+      }
+      if (captions.nonEmpty && set.labels.nonEmpty) {
+        captionGroups += CaptionGroup(
+          captions,
+          set.score * (usedLabels.size.toDouble / set.labels.length.toDouble))
       }
     }
-    captions
+    logger.debug(s"caption=$caption")
+    logger.debug(s"captionGroups=${pp(captionGroups)}")
+    captionGroups
   }
 
   def makeSeries(start: LabelValue.Value, stop: LabelValue.Value): Seq[LabelValue.Value] = {
@@ -256,7 +264,8 @@ object SegmentCaption {
   }
 
   case class Label(labelType: LabelType,
-                   regexMatch: Regex.Match)
+                   regexMatch: Regex.Match,
+                   labelIndex: Int)
 
   sealed abstract class LabelValue extends EnumEntry
   object LabelValue extends Enum[LabelValue] {
@@ -301,8 +310,10 @@ object SegmentCaption {
   }
 
   case class Series(seriesType: SeriesType,
-                    score: Int,
+                    score: Double,
                     labels: Seq[Label])
 
   case class Caption(label: Seq[String], index: Seq[Int], description: String)
+
+  case class CaptionGroup(captions: Seq[Caption], score: Double)
 }

@@ -154,7 +154,7 @@ object FigTools {
             logger.info(s"Tesseract OCR text: (box: ${pp(box)}, confidence: $confidence)='$text'")
           }
 
-          val captionGroups = SegmentCaption.segmentCaption(description_nohtml)
+          val captionGroups = CaptionSegmenter.segmentCaption(description_nohtml)
           logger.info(s"captionGroups=${pp(captionGroups)}")
 
           while (imp.isVisible) {

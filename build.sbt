@@ -51,7 +51,7 @@ lazy val figtools = (project in file(".")).
       val ivyReportFile = (ivyReport in Compile).value
       val xml = XML.loadFile(ivyReportFile)
       val (deps, depsScript) = (for {
-        artifact <- (xml \\ "ivy-report" \\ "dependencies" \ "module" \ "revision" \ "artifacts" \ "artifact")
+        artifact <- xml \\ "ivy-report" \\ "dependencies" \ "module" \ "revision" \ "artifacts" \ "artifact"
         location = (artifact \ "@location").text.
           replaceFirst(s"""^${Pattern.quote(System.getProperty("user.home"))}""","\\$HOME")
         originLocation = (artifact \ "origin-location" \ "@location").text

@@ -8,7 +8,7 @@ import scala.collection.mutable.ArrayBuffer
 import scala.util.matching.Regex
 import com.typesafe.scalalogging.Logger
 
-object SegmentCaption {
+object CaptionSegmenter {
   val logger = Logger("SegmentCaption")
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
 

@@ -9,7 +9,7 @@ import scala.sys.process._
 val Organization = "figtools"
 val Name = "figtools"
 val Version = "0.1.0"
-val ScalaVersion = "2.12.3"
+val ScalaVersion = "2.12.4"
 val DebugPort = 5005
 
 lazy val updatePrependScript = TaskKey[String]("updatePrependScript")

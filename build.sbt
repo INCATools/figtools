@@ -9,7 +9,7 @@ import scala.sys.process._
 val Organization = "figtools"
 val Name = "figtools"
 val Version = "0.1.0"
-val ScalaVersion = "2.12.4"
+val ScalaVersion = "2.12.5"
 val DebugPort = 5005
 
 lazy val updatePrependScript = TaskKey[String]("updatePrependScript")
@@ -42,7 +42,8 @@ lazy val figtools = (project in file(".")).
       "com.lihaoyi" %% "fastparse" % "1.0.0",
       "ch.qos.logback" % "logback-classic" % "1.2.3",
       "com.typesafe.scala-logging" %% "scala-logging" % "3.7.2",
-      "com.lihaoyi" %% "pprint" % "0.5.3"
+      "com.lihaoyi" %% "pprint" % "0.5.3",
+      "com.conversantmedia" % "rtree" % "1.0.4"
     ),
     artifactPath in (Compile, packageBin) := {
       baseDirectory.value / "bin" / name.value

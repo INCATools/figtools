@@ -1,11 +1,10 @@
 package figtools
 
-import java.awt.Rectangle
-
+import com.conversantmedia.util.collection.geometry.Rect2d
 import ij.ImagePlus
 
 trait ImageSegmenter {
   def segment(imp: ImagePlus): Seq[ImageSegment]
 
-  case class ImageSegment(imp: ImagePlus, box: Rectangle)
+  case class ImageSegment(imp: ImagePlus, box: Rect2d)
 }

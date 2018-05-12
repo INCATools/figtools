@@ -43,7 +43,7 @@ lazy val figtools = (project in file(".")).
       "ch.qos.logback" % "logback-classic" % "1.2.3",
       "com.typesafe.scala-logging" %% "scala-logging" % "3.7.2",
       "com.lihaoyi" %% "pprint" % "0.5.3",
-      "com.conversantmedia" % "rtree" % "1.0.4"
+      "org.spire-math" %% "archery" % "0.6.0"
     ),
     artifactPath in (Compile, packageBin) := {
       baseDirectory.value / "bin" / name.value

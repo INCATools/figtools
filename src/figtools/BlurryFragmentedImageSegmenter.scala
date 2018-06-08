@@ -6,12 +6,11 @@ import ij.{IJ, ImagePlus}
 import org.openimaj.image.FImage
 import org.openimaj.image.processing.edges.SUSANEdgeDetector
 
-import scala.collection.mutable.ArrayBuffer
+import scala.util.control.Breaks._
 
 class BlurryFragmentedImageSegmenter extends ImageSegmenter {
   override def segment(imp: ImagePlus): Seq[ImageSegment] = {
-    val segments = ArrayBuffer[ImageSegment]()
-
+    // use SUSAN to create edge image
     val fimage = new FImage(imp.getProcessor.getFloatArray)
     val Threshold = 0.08
     val NMax = 9
@@ -20,14 +19,50 @@ class BlurryFragmentedImageSegmenter extends ImageSegmenter {
     val edgeImage = new ImagePlus(
       imp.getTitle(),
       new FloatProcessor(susan.pixels).convertToByteProcessor())
+    // binarize the edge image
     IJ.run(edgeImage, "Make Binary", "")
 
     // find minimum gap width using xycut
+    var minGapSize: Option[Int] = None
+    for (y <- 0 until imp.getHeight) {
+      var lastRow = -1
+      breakable {
+        for (x <- 0 until imp.getWidth) {
+          if (imp.getProcessor.getPixel(x, y) != 0) {
+            if (lastRow >= 0) {
+              val gapSize = x-lastRow
+              if (minGapSize.isEmpty || minGapSize.get > gapSize) minGapSize = Some(gapSize)
+              lastRow = -1
+            }
+            break
+          }
+        }
+        if (lastRow == -1) lastRow = y
+      }
+    }
+    for (x <- 0 until imp.getWidth) {
+      var lastCol = -1
+      breakable {
+        for (y <- 0 until imp.getHeight) {
+          if (imp.getProcessor.getPixel(x, y) != 0) {
+            if (lastCol >= 0) {
+              val gapSize = x-lastCol
+              if (minGapSize.isEmpty || minGapSize.get > gapSize) minGapSize = Some(gapSize)
+              lastCol = -1
+            }
+            break
+          }
+        }
+        if (lastCol == -1) lastCol = x
+      }
+    }
 
     // dilate using minimum gap width
+    for (mgs <- minGapSize) {
+      IJ.run(edgeImage, "Gray Morphology", s"radius=$mgs type=circle operator=dilate")
+    }
 
     // apply cca method
-
-    segments
+    new GappedImageSegmenter().segment(edgeImage)
   }
 }

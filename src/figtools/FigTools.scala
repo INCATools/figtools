@@ -6,28 +6,29 @@ import better.files._
 import com.typesafe.scalalogging.Logger
 import edu.stanford.nlp.ling.CoreAnnotations.SentencesAnnotation
 import edu.stanford.nlp.pipeline.{Annotation, StanfordCoreNLP}
-import edu.stanford.nlp.trees.Tree
-import org.json4s._
-import org.json4s.jackson.JsonMethods._
 import scopt.OptionParser
 
 import sys.process._
 import collection.JavaConverters._
 import edu.stanford.nlp.util.logging.RedwoodConfiguration
-import ij.ImageJ
+import figtools.CaptionSegmenter.CaptionGroup
+import figtools.ImageSegmenter.ImageSegment
+import ij.{ImageJ, ImagePlus}
 import ij.io.Opener
+import ij.plugin.frame.RoiManager
 import net.sourceforge.tess4j.ITessAPI.TessPageIteratorLevel
 
 import util.control.Breaks._
 import scala.collection.mutable.ArrayBuffer
 import net.sourceforge.tess4j.Tesseract
+import org.tsers.zeison.Zeison
+
+import scala.collection.mutable
 
 
 object FigTools {
   val logger = Logger("FigTools")
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
-
-  implicit val formats: DefaultFormats.type = org.json4s.DefaultFormats
 
   case class Config(mode: String = "",
                     pdfExportResolution: Int = 300)
@@ -55,20 +56,6 @@ object FigTools {
     }
   }
 
-  def treeToJSONList(tree: Tree): JValue = {
-    JArray(List(JString(tree.label().toString))) ++
-      (if (tree.children().length ==1 && tree.getChild(0).isLeaf)
-        JString(tree.getChild(0).value())
-      else JArray(tree.children().map(t=>if (t.isLeaf) JString(t.value()) else treeToJSONList(t)).toList))
-  }
-
-  def treeToJSONObject(tree: Tree): JValue = {
-    JObject(List(tree.label().toString ->
-      (if (tree.children().length ==1 && tree.getChild(0).isLeaf)
-        JString(tree.getChild(0).value())
-      else JArray(tree.children().map(t=>if (t.isLeaf) JString(t.value()) else treeToJSONObject(t)).toList))))
-  }
-
   def analyze(config: Config): Unit = {
     // turn off CoreNLP logging
     RedwoodConfiguration.current.clear.apply()
@@ -80,10 +67,10 @@ object FigTools {
     val imagej = new ImageJ(ImageJ.EMBEDDED)
     imagej.exitWhenQuitting(true)
 
-    val dir = "." / "."
+    val dir = file"."
     for (datapackage <- dir.listRecursively.filter(_.name == "datapackage.json")) {
-      val json = parse(datapackage.contentAsString)
-      val description_nohtml = (json \ "description_nohtml").extract[String]
+      val json = Zeison.parse(datapackage.contentAsString)
+      val description_nohtml = json.description_nohtml.toStr
       logger.info(s"file=$datapackage")
       logger.info(s"description_nohtml=\n$description_nohtml")
 
@@ -93,17 +80,13 @@ object FigTools {
 
       for (sentence <- sentences.asScala) {
         logger.info(s"sentence=${sentence.toString}")
-        //val tree = sentence.get(classOf[TreeAnnotation])
-        //val json = treeToJSONObject(tree)
-        //logger.info(s"tree=\n${tree.pennString()}")
-        //logger.info(s"json=\n${pretty(json)}")
       }
       logger.info("")
 
-      val resources = (json \ "resources").extract[List[JValue]]
+      val resources = json.resources.toList
       for (resource <- resources) {
         breakable {
-          val name = (resource \ "name").extract[String]
+          val name = resource.name.toStr
           val imageFile = datapackage.parent / name
           if (!imageFile.toString.matches("""(?i).*\.(png|jpe?g|tiff?|pdf)""")) {
             logger.info(s"Skipping non-image file $imageFile")
@@ -143,23 +126,55 @@ object FigTools {
           }
           imp.show()
 
-          // use tesseract OCR
-          val instance = new Tesseract()
-          val bi = imp.getBufferedImage
-          val words = instance.getWords(bi, TessPageIteratorLevel.RIL_WORD).asScala
-          for (word <- words) {
-            val box = word.getBoundingBox
-            val confidence = word.getConfidence
-            val text = word.getText
-            logger.info(s"Tesseract OCR text: (box: ${pp(box)}, confidence: $confidence)='$text'")
-          }
-
           val captionGroups = CaptionSegmenter.segmentCaption(description_nohtml)
           logger.info(s"captionGroups=${pp(captionGroups)}")
+          val hasCaptions = captionGroups.flatMap{cg=>cg.captions}.flatMap{cs=>cs.label}.toSet
 
-          while (imp.isVisible) {
-            Thread.sleep(200)
+          val foundCaptions = mutable.Set[String]()
+          val segmentDescription = mutable.Map[ImageSegment, CaptionGroup]()
+
+          val segments = ImageSegmenter.segment(imp)
+          for (segment <- segments) {
+            imp.getProcessor.setRoi(segment.box.toRoi)
+            val cropped = new ImagePlus(imp.getTitle, imp.getProcessor.crop())
+            // use tesseract OCR
+            val instance = new Tesseract()
+            val bi = cropped.getBufferedImage
+            val words = instance.getWords(bi, TessPageIteratorLevel.RIL_WORD).asScala.
+              sortBy(x=>(-(x.getBoundingBox.width * x.getBoundingBox.height), -x.getConfidence))
+            for (word <- words) {
+              val box = word.getBoundingBox
+              val confidence = word.getConfidence
+              val text = word.getText
+              val captionGroups = CaptionSegmenter.segmentCaption(text)
+              for {
+                captionGroup <- captionGroups
+                caption <- captionGroup.captions
+                label <- caption.label
+              } {
+                if (hasCaptions.contains(label) && !foundCaptions.contains(label)) {
+                  segmentDescription(segment) = captionGroup
+                }
+
+              }
+              logger.info(s"Tesseract OCR text: (box: ${pp(box)}, confidence: $confidence)='$text'")
+            }
           }
+
+          // show
+          val rm = RoiManager.getRoiManager
+          rm.runCommand(imp, "Show All with labels")
+          for ((segment, captionGroup) <- segmentDescription) {
+            val label = captionGroup.captions.flatMap{c=>c.label}.distinct.sorted.mkString(" ")
+            val roi = segment.box.toRoi
+            rm.addRoi(roi)
+            val index = RoiManager.getRoiManager.getRoiIndex(roi)
+            rm.rename(index, label)
+          }
+          imp.repaintWindow()
+
+          // wait for user to close the image
+          while (imp.isVisible) Thread.sleep(200)
         }
       }
     }

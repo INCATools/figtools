@@ -31,13 +31,13 @@ lazy val figtools = (project in file(".")).
     resolvers += "Sonatype Releases" at "https://oss.sonatype.org/content/repositories/releases/",
     resolvers += "openimaj-maven" at "http://maven.openimaj.org/",
     resolvers += "openimaj-snapshots-maven" at "http://snapshots.openimaj.org/",
+    resolvers += Resolver.sonatypeRepo("snapshots"),
     libraryDependencies ++= Seq(
       "com.github.scopt" %% "scopt" % "3.6.0",
       "net.imagej" % "ij" % "1.50i",
       "net.sourceforge.tess4j" % "tess4j" % "3.4.0",
       "edu.stanford.nlp" % "stanford-corenlp" % "3.8.0",
       "edu.stanford.nlp" % "stanford-corenlp" % "3.8.0" classifier "models-english",
-      "org.json4s" %% "json4s-jackson" % "3.5.3",
       "com.github.pathikrit" %% "better-files" % "3.0.0",
       "org.tensorflow" % "tensorflow" % "1.2.1",
       "com.beachape" %% "enumeratum" % "1.5.12",
@@ -46,7 +46,8 @@ lazy val figtools = (project in file(".")).
       "com.typesafe.scala-logging" %% "scala-logging" % "3.7.2",
       "com.lihaoyi" %% "pprint" % "0.5.3",
       "org.spire-math" %% "archery" % "0.6.0",
-      "org.openimaj" % "image-processing" % "1.3.6"
+      "org.openimaj" % "image-processing" % "1.3.6",
+      "org.tsers.zeison" %% "zeison" % "0.8.0-SNAPSHOT"
     ),
     artifactPath in (Compile, packageBin) := {
       baseDirectory.value / "bin" / name.value

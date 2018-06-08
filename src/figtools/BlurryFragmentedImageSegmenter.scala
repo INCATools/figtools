@@ -1,5 +1,6 @@
 package figtools
 
+import figtools.ImageSegmenter.ImageSegment
 import ij.ImagePlus
 
 import scala.collection.mutable.ArrayBuffer

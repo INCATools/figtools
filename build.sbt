@@ -29,6 +29,8 @@ lazy val figtools = (project in file(".")).
     resolvers += "imagej" at "http://maven.imagej.net/content/repositories/thirdparty/",
     resolvers += "imagej public" at "http://maven.imagej.net/content/groups/public/",
     resolvers += "Sonatype Releases" at "https://oss.sonatype.org/content/repositories/releases/",
+    resolvers += "openimaj-maven" at "http://maven.openimaj.org/",
+    resolvers += "openimaj-snapshots-maven" at "http://snapshots.openimaj.org/",
     libraryDependencies ++= Seq(
       "com.github.scopt" %% "scopt" % "3.6.0",
       "net.imagej" % "ij" % "1.50i",
@@ -43,7 +45,8 @@ lazy val figtools = (project in file(".")).
       "ch.qos.logback" % "logback-classic" % "1.2.3",
       "com.typesafe.scala-logging" %% "scala-logging" % "3.7.2",
       "com.lihaoyi" %% "pprint" % "0.5.3",
-      "org.spire-math" %% "archery" % "0.6.0"
+      "org.spire-math" %% "archery" % "0.6.0",
+      "org.openimaj" % "image-processing" % "1.3.6"
     ),
     artifactPath in (Compile, packageBin) := {
       baseDirectory.value / "bin" / name.value

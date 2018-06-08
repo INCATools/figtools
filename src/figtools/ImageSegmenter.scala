@@ -24,7 +24,7 @@ object ImageSegmenter {
       segments = new StitchedImageSegmenter().segment(preprocessed)
     }
     if (segments.isEmpty) {
-      segments = new BlurryFragmentedImageSegmenter().segment(imp)
+      segments = new BlurryFragmentedImageSegmenter().segment(preprocessed)
     }
     segments
   }

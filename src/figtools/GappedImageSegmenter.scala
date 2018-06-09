@@ -9,6 +9,7 @@ import ij.measure.ResultsTable
 import ij.plugin.filter.ParticleAnalyzer
 
 import scala.collection.mutable.ArrayBuffer
+import ImageLog._
 
 class GappedImageSegmenter extends ImageSegmenter {
   val logger = Logger("FigTools")
@@ -24,6 +25,7 @@ class GappedImageSegmenter extends ImageSegmenter {
     val lut = (0 until 256).map{v=>if (v < threshold) 0 else 255.toByte.toInt}.toArray
     imp.getProcessor.applyTable(lut)
 
+    imp2.log("ResultsTable")
     val rt = new ResultsTable
     val particleAnalyzer = new ParticleAnalyzer(
       ParticleAnalyzer.EXCLUDE_EDGE_PARTICLES |

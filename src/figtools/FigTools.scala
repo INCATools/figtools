@@ -155,7 +155,6 @@ object FigTools {
                 if (hasCaptions.contains(label) && !foundCaptions.contains(label)) {
                   segmentDescription(segment) = captionGroup
                 }
-
               }
               logger.info(s"Tesseract OCR text: (box: ${pp(box)}, confidence: $confidence)='$text'")
             }
@@ -168,10 +167,9 @@ object FigTools {
             val label = captionGroup.captions.flatMap{c=>c.label}.distinct.sorted.mkString(" ")
             val roi = segment.box.toRoi
             rm.addRoi(roi)
-            val index = RoiManager.getRoiManager.getRoiIndex(roi)
+            val index = rm.getRoiIndex(roi)
             rm.rename(index, label)
           }
-          imp.repaintWindow()
 
           // wait for user to close the image
           while (imp.isVisible) Thread.sleep(200)

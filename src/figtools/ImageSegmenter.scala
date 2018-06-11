@@ -18,7 +18,8 @@ object ImageSegmenter {
   }
   case class ImageSegment(imp: ImagePlus, box: Box[Int])
 
-  def segment(imp: ImagePlus): Seq[ImageSegment] = {
+  def segment(imp_ : ImagePlus): Seq[ImageSegment] = {
+    val imp = imp_.duplicate()
     val preprocessed = new ImagePreprocessor().preprocess(imp)
     var segments = new GappedImageSegmenter().segment(preprocessed)
     if (segments.isEmpty) {

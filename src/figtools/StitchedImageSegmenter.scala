@@ -1,6 +1,5 @@
 package figtools
 
-import enumeratum._
 import figtools.ImageSegmenter.ImageSegment
 import ij.ImagePlus
 import ij.IJ
@@ -8,8 +7,6 @@ import ij.process.FloatProcessor
 import org.openimaj.image.FImage
 import org.openimaj.image.processing.edges.SUSANEdgeDetector
 import ImageLog.log
-
-import scala.annotation.tailrec
 
 class StitchedImageSegmenter extends ImageSegmenter {
   override def segment(imp: ImagePlus): Seq[ImageSegment] = {

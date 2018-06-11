@@ -3,18 +3,23 @@ import archery.Box
 import ij.ImagePlus
 import ij.gui.Roi
 import ij.process.{ImageConverter, ImageProcessor}
+import ImageLog.log
 
 import scala.collection.mutable
 import scala.util.control.Breaks._
 
 class ImagePreprocessor {
   def preprocess(imp: ImagePlus): ImagePlus = {
+    log(imp, "[ImagePreprocessor] original image")
+
     // convert to 8-bit grayscale
     new ImageConverter(imp).convertToGray8()
+    log(imp, "[ImagePreprocessor] convert to gray 8-bit")
     // resize to 2x
     val resized = new ImagePlus(imp.getTitle())
     imp.getProcessor().setInterpolationMethod(ImageProcessor.BICUBIC)
     resized.setProcessor(imp.getProcessor.resize(imp.getWidth() * 2, imp.getHeight() * 2))
+    log(resized, "[ImagePreprocessor] resize to 2x")
     // linear map the pixel values to [0.05, 0.95]
     val minPixel = (0.05 * 255.0).toInt
     val maxPixel = (0.95 * 255.0).toInt
@@ -29,11 +34,14 @@ class ImagePreprocessor {
         }
       }
     }
+    log(resized, "[ImagePreprocessor] linear map the pixel values to 0.05, 0.95")
     // crop image borders by removing rows and columns of pixels whose maximum
     // gradient value is 0.
     val edges = new ImagePlus(resized.getTitle(), resized.getProcessor().duplicate())
     edges.getProcessor().findEdges()
+    log(edges, "[ImagePreprocessor] find edges")
     val cropped = cropImageBorders(edges, 255.toByte.toInt).getOrElse(resized)
+    log(cropped, "[ImagePreprocessor] crop image borders")
     // figure out if image is black or white background
     // compute histogram of pixel color values
     val histo = new mutable.HashMap[Int,Long]()
@@ -59,9 +67,11 @@ class ImagePreprocessor {
       }
     }
     // if this image has a black background, invert it
-    if (mode < (0.5 * 256.0).toInt) imp.getProcessor().invert()
-
-    imp
+    if (mode < (0.5 * 256.0).toInt) {
+      cropped.getProcessor().invert()
+      log(cropped, "[ImagePreprocessor] invert image")
+    }
+    cropped
   }
 
   def findImageBorders(imp: ImagePlus, gapColor: Int): Box = {

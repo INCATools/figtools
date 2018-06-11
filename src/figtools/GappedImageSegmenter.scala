@@ -19,13 +19,14 @@ class GappedImageSegmenter extends ImageSegmenter {
 
   override def segment(imp: ImagePlus): Seq[ImageSegment] = {
     val imp2 = imp.duplicate()
+    log(imp2, "[GappedImageSegmenter] original image")
     val segments = ArrayBuffer[ImageSegment]()
 
     // binarize the image using a threshold of 0.95
     val threshold = (255.0 * BinarizeThreshold).toInt
     val lut = (0 until 256).map{v=>if (v < threshold) 0 else 255.toByte.toInt}.toArray
-    imp.getProcessor.applyTable(lut)
-    log(imp, s"[GappedImageSegmenter] Binarize with $threshold threshold")
+    imp2.getProcessor.applyTable(lut)
+    log(imp2, s"[GappedImageSegmenter] Binarize with $threshold threshold")
 
     val rt = new ResultsTable
     val particleAnalyzer = new ParticleAnalyzer(
@@ -39,7 +40,7 @@ class GappedImageSegmenter extends ImageSegmenter {
       Double.MaxValue)
     if (!particleAnalyzer.analyze(imp2)) throw new RuntimeException(
       "ParticleAnalyzer.analyze() returned false!")
-    log(imp, s"[GappedImageSegmenter] Particle Analyzer")
+    log(imp2, s"[GappedImageSegmenter] Particle Analyzer")
 
     // Get the objects and iterate through them
     logger.info(s"ResultsTable Column Headings: ${rt.getColumnHeadings}")
@@ -61,7 +62,7 @@ class GappedImageSegmenter extends ImageSegmenter {
       }
       else None
     }: _*)
-    log(imp, "RTree boxes", boxes: _*)
+    log(imp2, "RTree boxes", boxes: _*)
     // merge overlapping segments
     var loop = true
     while (loop) {

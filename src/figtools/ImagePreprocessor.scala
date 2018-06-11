@@ -23,21 +23,16 @@ class ImagePreprocessor {
     // linear map the pixel values to [0.05, 0.95]
     val minPixel = (0.05 * 255.0).toInt
     val maxPixel = (0.95 * 255.0).toInt
-    for (y <- 0 until resized.getHeight) {
-      for (x <- 0 until resized.getWidth) {
-        val pixel = resized.getPixel(x, y)
-        for (i <- 0 until pixel.length) {
-          val value = if (pixel(i) < minPixel) minPixel
-          else if (pixel(i) > maxPixel) maxPixel
-          else ((pixel(i).toDouble-minPixel.toDouble) / (maxPixel-minPixel).toDouble * 255.0).toInt
-          resized.getProcessor.putPixel(x, y, value)
-        }
-      }
-    }
+    val lut = (0 to 255).map{v=>
+      if (v < minPixel) 0
+      else if (v > maxPixel) 255
+      else ((v-minPixel).toDouble / (maxPixel-minPixel+1).toDouble * 255.0).toInt
+    }.toArray
+    resized.getProcessor.applyTable(lut)
     log(resized, s"[ImagePreprocessor] linear map the pixel values to $minPixel, $maxPixel")
     // crop image borders by removing rows and columns of pixels whose maximum
     // gradient value is 0.
-    val edges = new ImagePlus(resized.getTitle, resized.getProcessor().duplicate())
+    val edges = new ImagePlus(resized.getTitle, resized.getProcessor.duplicate())
     edges.getProcessor.findEdges()
     log(edges, "[ImagePreprocessor] find edges")
     val cropped = cropImageBorders(edges, 255.toByte.toInt).getOrElse(resized)

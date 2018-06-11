@@ -2,6 +2,7 @@ package figtools
 
 import java.util.Scanner
 
+import com.typesafe.scalalogging.Logger
 import ij.gui.Roi
 import ij.plugin.frame.RoiManager
 import ij.process.Blitter
@@ -9,6 +10,7 @@ import ij.{IJ, ImagePlus, WindowManager}
 import javax.swing.SwingUtilities
 
 object ImageLog {
+  val logger = Logger("FigTools")
   def log(imp_ : ImagePlus, description: String, rois: Any*): Unit = {
     SwingUtilities.invokeAndWait(()=>{
       val imp = imp_.duplicate()
@@ -55,6 +57,7 @@ object ImageLog {
         }
       }
     })
+    logger.info(s"${imp_.getTitle}: $description")
     promptEnterKey()
   }
 

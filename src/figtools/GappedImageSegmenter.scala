@@ -43,7 +43,6 @@ class GappedImageSegmenter extends ImageSegmenter {
     log(imp2, s"[GappedImageSegmenter] Particle Analyzer")
 
     // Get the objects and iterate through them
-    logger.info(s"ResultsTable Column Headings: ${rt.getColumnHeadings}")
     var segs = ArrayBuffer[ImageSegment]()
     val boxes = ArrayBuffer[Roi]()
     val rtree = RTree((0 until rt.getCounter).flatMap{i=>

@@ -48,10 +48,7 @@ object FigTools {
     parser.parse(args, Config()) match {
       case Some(config) =>
         config.mode match {
-          case "analyze" =>
-            new Thread(()=>{
-              analyze(config)
-            }).start()
+          case "analyze" => analyze(config)
           case "" => parser.showUsage()
         }
       case None =>

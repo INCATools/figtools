@@ -10,7 +10,7 @@ import javax.swing.SwingUtilities
 
 object ImageLog {
   def log(imp_ : ImagePlus, description: String, rois: Any*): Unit = {
-    SwingUtilities.invokeLater(()=>{
+    SwingUtilities.invokeAndWait(()=>{
       val imp = imp_.duplicate()
       // get currently displayed image
       val currentImp = WindowManager.getCurrentImage

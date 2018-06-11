@@ -9,7 +9,8 @@ import ij.measure.ResultsTable
 import ij.plugin.filter.ParticleAnalyzer
 
 import scala.collection.mutable.ArrayBuffer
-import ImageLog._
+import ImageLog.log
+import ij.gui.Roi
 
 class GappedImageSegmenter extends ImageSegmenter {
   val logger = Logger("FigTools")
@@ -24,8 +25,8 @@ class GappedImageSegmenter extends ImageSegmenter {
     val threshold = (255.0 * BinarizeThreshold).toInt
     val lut = (0 until 256).map{v=>if (v < threshold) 0 else 255.toByte.toInt}.toArray
     imp.getProcessor.applyTable(lut)
+    log(imp, s"[GappedImageSegmenter] Binarize with $threshold threshold")
 
-    imp2.log("ResultsTable")
     val rt = new ResultsTable
     val particleAnalyzer = new ParticleAnalyzer(
       ParticleAnalyzer.EXCLUDE_EDGE_PARTICLES |
@@ -38,10 +39,12 @@ class GappedImageSegmenter extends ImageSegmenter {
       Double.MaxValue)
     if (!particleAnalyzer.analyze(imp2)) throw new RuntimeException(
       "ParticleAnalyzer.analyze() returned false!")
+    log(imp, s"[GappedImageSegmenter] Particle Analyzer")
 
     // Get the objects and iterate through them
     logger.info(s"ResultsTable Column Headings: ${rt.getColumnHeadings}")
     var segs = ArrayBuffer[ImageSegment]()
+    val boxes = ArrayBuffer[Roi]()
     val rtree = RTree((0 until rt.getCounter).flatMap{i=>
       val bx = rt.getValue("BX", i).toInt
       val by = rt.getValue("BY", i).toInt
@@ -52,11 +55,13 @@ class GappedImageSegmenter extends ImageSegmenter {
           height > imp2.getHeight / ParticleThreshold)
       {
         val box = ImageSegmenter.Box(bx, by, bx+width, by+height)
+        boxes += box.toRoi
         segs += ImageSegment(imp, box)
         Some(Entry(Box(box.x, box.y, box.x2, box.y2), box))
       }
       else None
     }: _*)
+    log(imp, "RTree boxes", boxes: _*)
     // merge overlapping segments
     var loop = true
     while (loop) {
@@ -91,6 +96,7 @@ class GappedImageSegmenter extends ImageSegmenter {
       }
       segs = outsegs
     }
+    log(imp2, "merge overlapping segments", segs.map{s=>s.box.toRoi}: _*)
     // temporarily eliminate small components
     val BboxThreshold = 0.2
     val (larger, smaller) = segs.sortBy({seg=>
@@ -118,6 +124,7 @@ class GappedImageSegmenter extends ImageSegmenter {
         logger.warn(s"No largest bounding box found!")
         (segs, Seq())
     }
+    log(imp2, "temporarily eliminate small components", larger.map{s=>s.box.toRoi}: _*)
     // recover missing panels
     for {
       maxWidthEntry <- segs.sortBy(_.box.width).reverse.headOption
@@ -145,6 +152,7 @@ class GappedImageSegmenter extends ImageSegmenter {
           else Seq.empty)
       }
     }
+    log(imp2, "recover missing panels", segs.map{s=>s.box.toRoi}: _*)
     //check segmentation area
     val segmentArea = segments.map{s=>(s.box.x2-s.box.x)*(s.box.y2-s.box.y)}.sum
     val imageArea = imp2.getWidth * imp2.getHeight
@@ -189,6 +197,7 @@ class GappedImageSegmenter extends ImageSegmenter {
         }
       }
     }
+    log(imp2, "recover small components", recovered.map{s=>s.box.toRoi}: _*)
     recovered
   }
 

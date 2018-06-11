@@ -5,11 +5,14 @@ import ij.process.FloatProcessor
 import ij.{IJ, ImagePlus}
 import org.openimaj.image.FImage
 import org.openimaj.image.processing.edges.SUSANEdgeDetector
+import ImageLog.log
 
 import scala.util.control.Breaks._
 
 class BlurryFragmentedImageSegmenter extends ImageSegmenter {
   override def segment(imp: ImagePlus): Seq[ImageSegment] = {
+    log(imp, "[BlurryFragmentedImageSegmenter] original image")
+
     // use SUSAN to create edge image
     val fimage = new FImage(imp.getProcessor.getFloatArray)
     val Threshold = 0.08
@@ -19,8 +22,10 @@ class BlurryFragmentedImageSegmenter extends ImageSegmenter {
     val edgeImage = new ImagePlus(
       imp.getTitle(),
       new FloatProcessor(susan.pixels).convertToByteProcessor())
+    log(edgeImage, "[BlurryFragmentedImageSegmenter] edge image")
     // binarize the edge image
     IJ.run(edgeImage, "Make Binary", "")
+    log(edgeImage, "[BlurryFragmentedImageSegmenter] binarized edge image")
 
     // find minimum gap width using xycut
     var minGapSize: Option[Int] = None
@@ -60,6 +65,7 @@ class BlurryFragmentedImageSegmenter extends ImageSegmenter {
     // dilate using minimum gap width
     for (mgs <- minGapSize) {
       IJ.run(edgeImage, "Gray Morphology", s"radius=$mgs type=circle operator=dilate")
+      log(edgeImage, "[BlurryFragmentedImageSegmenter] dilated edge image")
     }
 
     // apply cca method

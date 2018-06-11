@@ -7,25 +7,22 @@ import ij.IJ
 import ij.process.FloatProcessor
 import org.openimaj.image.FImage
 import org.openimaj.image.processing.edges.SUSANEdgeDetector
+import ImageLog.log
 
 import scala.annotation.tailrec
 
 class StitchedImageSegmenter extends ImageSegmenter {
-  sealed trait Direction extends EnumEntry
-  object Direction extends Enum[Direction] {
-    val values = findValues
-    case object Horiz extends Direction
-    case object Vert extends Direction
-  }
-
   override def segment(imp: ImagePlus): Seq[ImageSegment] = {
-    val segments = segment0(ImageSegmenter(imp, ImageSegmenter.Box(0, 0, imp.getWidth, imp.getHeight)))
+    val segments = segment0(ImageSegment(imp, ImageSegmenter.Box(0, 0, imp.getWidth, imp.getHeight)))
     val MinLengthRatio = 0.2
     segments.filter{seg=>seg.box.width >= MinLengthRatio && seg.box.height >= MinLengthRatio}
   }
 
   def segment0(segment: ImageSegment): Seq[ImageSegment] = {
-    val imp = segment.imp
+    val imp = segment.imp.duplicate()
+    log(imp, "[StitchedImageSegmenter] original image")
+
+    // get edge image
     val fimage = new FImage(imp.getProcessor.getFloatArray)
     val Threshold = 0.08
     val NMax = 9
@@ -34,8 +31,12 @@ class StitchedImageSegmenter extends ImageSegmenter {
     val edgeImage = new ImagePlus(
       imp.getTitle(),
       new FloatProcessor(susan.pixels).convertToByteProcessor())
+    log(edgeImage, "[StitchedImageSegmenter] edge image")
+    // binarize the edge image
     IJ.run(edgeImage, "Make Binary", "")
+    log(edgeImage, "[StitchedImageSegmenter] binarized edge image")
 
+    // get highest peak greater than MinPeakRatio
     val MinPeakRatio = 0.7
     val horizProj = Array.ofDim[Long](segment.box.width)
     for (y <- segment.box.y to segment.box.y2) {
@@ -65,9 +66,12 @@ class StitchedImageSegmenter extends ImageSegmenter {
         bestVertY = y
       }
     }
-    if (bestHoriz == 0 && bestVert == 0) {
+
+    // if no peak exists, return whole segment
+    val segments = if (bestHoriz == 0 && bestVert == 0) {
       Seq(segment)
     }
+    // return horizontally split segments
     else if (bestHoriz > bestVert) {
       segment0(ImageSegment(imp, ImageSegmenter.Box(
         segment.box.x,
@@ -80,6 +84,7 @@ class StitchedImageSegmenter extends ImageSegmenter {
         segment.box.x2,
         segment.box.y2)))
     }
+    // return vertically split segments
     else {
       segment0(ImageSegment(imp, ImageSegmenter.Box(
         segment.box.x,
@@ -92,5 +97,7 @@ class StitchedImageSegmenter extends ImageSegmenter {
         segment.box.x2,
         segment.box.y2)))
     }
+    log(imp, "[StitchedImageSegmenter] split into segments", segments.map{s=>s.box.toRoi}: _*)
+    segments
   }
 }

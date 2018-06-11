@@ -16,9 +16,9 @@ class ImagePreprocessor {
     new ImageConverter(imp).convertToGray8()
     log(imp, "[ImagePreprocessor] convert to gray 8-bit")
     // resize to 2x
-    val resized = new ImagePlus(imp.getTitle())
+    val resized = new ImagePlus(imp.getTitle)
     imp.getProcessor().setInterpolationMethod(ImageProcessor.BICUBIC)
-    resized.setProcessor(imp.getProcessor.resize(imp.getWidth() * 2, imp.getHeight() * 2))
+    resized.setProcessor(imp.getProcessor.resize(imp.getWidth * 2, imp.getHeight * 2))
     log(resized, "[ImagePreprocessor] resize to 2x")
     // linear map the pixel values to [0.05, 0.95]
     val minPixel = (0.05 * 255.0).toInt
@@ -29,16 +29,16 @@ class ImagePreprocessor {
         for (i <- 0 until pixel.length) {
           val value = if (pixel(i) < minPixel) minPixel
           else if (pixel(i) > maxPixel) maxPixel
-          else ((pixel(i).toDouble / (maxPixel - minPixel).toDouble) * 256.0).toInt
-          resized.getProcessor().putPixel(x, y, value)
+          else ((pixel(i).toDouble-minPixel.toDouble) / (maxPixel-minPixel).toDouble * 255.0).toInt
+          resized.getProcessor.putPixel(x, y, value)
         }
       }
     }
-    log(resized, "[ImagePreprocessor] linear map the pixel values to 0.05, 0.95")
+    log(resized, s"[ImagePreprocessor] linear map the pixel values to $minPixel, $maxPixel")
     // crop image borders by removing rows and columns of pixels whose maximum
     // gradient value is 0.
-    val edges = new ImagePlus(resized.getTitle(), resized.getProcessor().duplicate())
-    edges.getProcessor().findEdges()
+    val edges = new ImagePlus(resized.getTitle, resized.getProcessor().duplicate())
+    edges.getProcessor.findEdges()
     log(edges, "[ImagePreprocessor] find edges")
     val cropped = cropImageBorders(edges, 255.toByte.toInt).getOrElse(resized)
     log(cropped, "[ImagePreprocessor] crop image borders")
@@ -52,7 +52,7 @@ class ImagePreprocessor {
           val value = pixel(0)
           histo += value->(histo.getOrElse(value, 0L)+1L)
         }
-        else if (pixel.length >= 1) {
+        else if (pixel.nonEmpty) {
           histo += pixel(0)->(histo.getOrElse(pixel(0), 0L)+1L)
         }
       }
@@ -68,7 +68,7 @@ class ImagePreprocessor {
     }
     // if this image has a black background, invert it
     if (mode < (0.5 * 256.0).toInt) {
-      cropped.getProcessor().invert()
+      cropped.getProcessor.invert()
       log(cropped, "[ImagePreprocessor] invert image")
     }
     cropped
@@ -76,9 +76,9 @@ class ImagePreprocessor {
 
   def findImageBorders(imp: ImagePlus, gapColor: Int): Box = {
     var x1 = 0
-    var x2 = imp.getWidth() - 1
+    var x2 = imp.getWidth - 1
     var y1 = 0
-    var y2 = imp.getHeight() - 1
+    var y2 = imp.getHeight - 1
     var cropX1 = -1
     var cropX2 = -1
     var cropY1 = -1
@@ -151,8 +151,8 @@ class ImagePreprocessor {
     }
     // cropping failed
     val MinSizeRatio = 0.4
-    val MinWidth =  (imp.getWidth() * MinSizeRatio).toInt
-    val MinHeight =  (imp.getHeight() * MinSizeRatio).toInt
+    val MinWidth =  (imp.getWidth * MinSizeRatio).toInt
+    val MinHeight =  (imp.getHeight * MinSizeRatio).toInt
     if ((cropX1 < 0 || cropY1 < 0 || cropX2 < 0 || cropY2 < 0) || !(cropX1 + MinWidth < cropX2 && cropY1 + MinHeight < cropY2)) {
       Box(x1, x2, y1, y2)
     }
@@ -166,7 +166,7 @@ class ImagePreprocessor {
     }
     else {
       imp.setRoi(new Roi(roi.x, roi.y, roi.x2 - roi.x + 1, roi.y2 - roi.y + 1))
-      val cropped = new ImagePlus(imp.getTitle(), imp.getProcessor().crop())
+      val cropped = new ImagePlus(imp.getTitle, imp.getProcessor.crop())
       Some(cropped)
     }
   }

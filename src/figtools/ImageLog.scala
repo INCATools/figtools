@@ -29,12 +29,12 @@ object ImageLog {
       val sliceNum = currentImp.getNSlices
       currentImp.setSlice(sliceNum)
       // copy bits
-      currentImp.getProcessor().copyBits(imp.getProcessor, 0, 0, Blitter.COPY)
+      currentImp.getProcessor.copyBits(imp.getProcessor, 0, 0, Blitter.COPY)
       // set the slice label
-      currentImp.getImageStack().setSliceLabel(description, sliceNum)
+      currentImp.getImageStack.setSliceLabel(description, sliceNum)
 
       // add ROIs to new slice
-      if (!rois.isEmpty) {
+      if (rois.nonEmpty) {
         // get ROI manager and update settings
         val rm = RoiManager.getRoiManager
         rm.runCommand("Associate", "true")

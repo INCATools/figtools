@@ -26,7 +26,7 @@ class StitchedImageSegmenter extends ImageSegmenter {
     val Radius = 3.4
     val susan = SUSANEdgeDetector.smoothCircularSusan(fimage, Threshold, NMax, Radius)
     val edgeImage = new ImagePlus(
-      imp.getTitle(),
+      imp.getTitle,
       new FloatProcessor(susan.pixels).convertToByteProcessor())
     log(edgeImage, "[StitchedImageSegmenter] edge image")
     // binarize the edge image

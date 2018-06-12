@@ -6,14 +6,18 @@ import ij.{IJ, ImagePlus}
 import org.openimaj.image.FImage
 import org.openimaj.image.processing.edges.SUSANEdgeDetector
 import ImageLog.log
+import com.typesafe.scalalogging.Logger
 
 import scala.util.control.Breaks._
 
 class BlurryFragmentedImageSegmenter extends ImageSegmenter {
+  val logger = Logger("FigTools")
+
   override def segment(imp: ImagePlus): Seq[ImageSegment] = {
     log(imp, "[BlurryFragmentedImageSegmenter] original image")
 
     // use SUSAN to create edge image
+    logger.info("running SUSAN edge detector, this may take some time...")
     val fimage = new FImage(imp.getProcessor.getFloatArray)
     val Threshold = 0.08
     val NMax = 9

@@ -34,7 +34,7 @@ lazy val figtools = (project in file(".")).
     resolvers += Resolver.sonatypeRepo("snapshots"),
     libraryDependencies ++= Seq(
       "com.github.scopt" %% "scopt" % "3.6.0",
-      "net.imagej" % "ij" % "1.50i",
+      "net.imagej" % "ij" % "1.52c",
       "net.sourceforge.tess4j" % "tess4j" % "3.4.0",
       "edu.stanford.nlp" % "stanford-corenlp" % "3.8.0",
       "edu.stanford.nlp" % "stanford-corenlp" % "3.8.0" classifier "models-english",
@@ -47,7 +47,8 @@ lazy val figtools = (project in file(".")).
       "com.lihaoyi" %% "pprint" % "0.5.3",
       "org.spire-math" %% "archery" % "0.6.0",
       "org.openimaj" % "image-processing" % "1.3.6",
-      "org.tsers.zeison" %% "zeison" % "0.8.0-SNAPSHOT"
+      "org.tsers.zeison" %% "zeison" % "0.8.0-SNAPSHOT",
+      "fr.inra.ijpb" % "MorphoLibJ_" % "1.3.4"
     ),
     artifactPath in (Compile, packageBin) := {
       baseDirectory.value / "bin" / name.value

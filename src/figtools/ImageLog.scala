@@ -55,15 +55,15 @@ object ImageLog {
             case _ => throw new RuntimeException(s"Could not parse ROI argument: $r")
           }
         }
+        rm.runCommand(currentImp, "Show All with labels")
       }
     })
-    logger.info(s"${imp_.getTitle}: $description")
+    logger.info(s"${imp_.getTitle}: $description: Rois: ${pprint.apply(rois)}")
     promptEnterKey()
   }
 
   def promptEnterKey(): Unit = {
     System.out.println("""Press "ENTER" to continue...""")
-    val scanner = new Scanner(System.in)
-    scanner.nextLine
+    new Scanner(System.in).nextLine
   }
 }

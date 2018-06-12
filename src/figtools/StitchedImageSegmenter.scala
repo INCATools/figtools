@@ -7,19 +7,14 @@ import ij.process.FloatProcessor
 import org.openimaj.image.FImage
 import org.openimaj.image.processing.edges.SUSANEdgeDetector
 import ImageLog.log
+import com.typesafe.scalalogging.Logger
 
 class StitchedImageSegmenter extends ImageSegmenter {
+  val logger = Logger("FigTools")
+
   override def segment(imp: ImagePlus): Seq[ImageSegment] = {
-    val segments = segment0(ImageSegment(imp, ImageSegmenter.Box(0, 0, imp.getWidth, imp.getHeight)))
-    val MinLengthRatio = 0.2
-    segments.filter{seg=>seg.box.width >= MinLengthRatio && seg.box.height >= MinLengthRatio}
-  }
-
-  def segment0(segment: ImageSegment): Seq[ImageSegment] = {
-    val imp = segment.imp.duplicate()
-    log(imp, "[StitchedImageSegmenter] original image")
-
     // get edge image
+    logger.info("running SUSAN edge detector, this may take some time...")
     val fimage = new FImage(imp.getProcessor.getFloatArray)
     val Threshold = 0.08
     val NMax = 9
@@ -33,18 +28,30 @@ class StitchedImageSegmenter extends ImageSegmenter {
     IJ.run(edgeImage, "Make Binary", "")
     log(edgeImage, "[StitchedImageSegmenter] binarized edge image")
 
+    val segments = segment0(ImageSegment(edgeImage, ImageSegmenter.Box(0, 0, imp.getWidth, imp.getHeight)))
+    log(imp, "[StitchedImageSegmenter] split into segments", segments.map{s=>s.box.toRoi}: _*)
+    val MinLengthRatio = 0.2
+    val result = segments.filter{seg=>seg.box.width >= MinLengthRatio && seg.box.height >= MinLengthRatio}
+    log(imp, s"[StitchedImageSegmenter] filter segments by MinLengthRatio $MinLengthRatio",
+      result.map{s=>s.box.toRoi}: _*)
+    result
+  }
+
+  def segment0(segment: ImageSegment): Seq[ImageSegment] = {
+    val imp = segment.imp
+
     // get highest peak greater than MinPeakRatio
     val MinPeakRatio = 0.7
-    val horizProj = Array.ofDim[Long](segment.box.width)
+    val horizProj = Array.ofDim[Long](segment.box.x2-segment.box.x+1)
     for (y <- segment.box.y to segment.box.y2) {
       for (x <- segment.box.x to segment.box.x2) {
-        horizProj(x) += (if (imp.getProcessor.getPixel(x, y) == 0) 0 else 1)
+        horizProj(x-segment.box.x) += (if (imp.getProcessor.getPixel(x, y) == 0) 0 else 1)
       }
     }
-    val vertProj = Array.ofDim[Long](segment.box.height)
+    val vertProj = Array.ofDim[Long](segment.box.y2-segment.box.y+1)
     for (x <- segment.box.x to segment.box.x2) {
       for (y <- segment.box.y to segment.box.y2) {
-        vertProj(y) += (if (imp.getProcessor.getPixel(x, y) == 0) 0 else 1)
+        vertProj(y-segment.box.y) += (if (imp.getProcessor.getPixel(x, y) == 0) 0 else 1)
       }
     }
     var bestHoriz = 0L
@@ -52,14 +59,14 @@ class StitchedImageSegmenter extends ImageSegmenter {
     var bestVert = 0L
     var bestVertY = -1
     for (x <- segment.box.x to segment.box.x2) {
-      if (horizProj(x) >= MinPeakRatio * segment.box.width && horizProj(x) > bestHoriz) {
-        bestHoriz = horizProj(x)
+      if (horizProj(x-segment.box.x) >= MinPeakRatio * (segment.box.y2-segment.box.y+1) && horizProj(x-segment.box.x) > bestHoriz) {
+        bestHoriz = horizProj(x-segment.box.x)
         bestHorizX = x
       }
     }
     for (y <- segment.box.y to segment.box.y2) {
-      if (vertProj(y) >= MinPeakRatio * segment.box.height && vertProj(y) > bestVert) {
-        bestVert = vertProj(y)
+      if (vertProj(y-segment.box.y) >= MinPeakRatio * (segment.box.x2-segment.box.x+1) && vertProj(y-segment.box.y) > bestVert) {
+        bestVert = vertProj(y-segment.box.y)
         bestVertY = y
       }
     }
@@ -94,7 +101,6 @@ class StitchedImageSegmenter extends ImageSegmenter {
         segment.box.x2,
         segment.box.y2)))
     }
-    log(imp, "[StitchedImageSegmenter] split into segments", segments.map{s=>s.box.toRoi}: _*)
     segments
   }
 }

@@ -61,7 +61,7 @@ class GappedImageSegmenter extends ImageSegmenter {
       }
       else None
     }: _*)
-    log(imp2, "RTree boxes", boxes: _*)
+    log(imp2, "[GappedImageSegmenter] RTree boxes", boxes: _*)
     // merge overlapping segments
     var loop = true
     while (loop) {
@@ -96,7 +96,7 @@ class GappedImageSegmenter extends ImageSegmenter {
       }
       segs = outsegs
     }
-    log(imp2, "merge overlapping segments", segs.map{s=>s.box.toRoi}: _*)
+    log(imp2, "[GappedImageSegmenter] merge overlapping segments", segs.map{s=>s.box.toRoi}: _*)
     // temporarily eliminate small components
     val BboxThreshold = 0.2
     val (larger, smaller) = segs.sortBy({seg=>
@@ -124,7 +124,7 @@ class GappedImageSegmenter extends ImageSegmenter {
         logger.warn(s"No largest bounding box found!")
         (segs, Seq())
     }
-    log(imp2, "temporarily eliminate small components", larger.map{s=>s.box.toRoi}: _*)
+    log(imp2, "[GappedImageSegmenter] temporarily eliminate small components", larger.map{s=>s.box.toRoi}: _*)
     // recover missing panels
     for {
       maxWidthEntry <- segs.sortBy(_.box.width).reverse.headOption
@@ -152,7 +152,7 @@ class GappedImageSegmenter extends ImageSegmenter {
           else Seq.empty)
       }
     }
-    log(imp2, "recover missing panels", segs.map{s=>s.box.toRoi}: _*)
+    log(imp2, "[GappedImageSegmenter] recover missing panels", segs.map{s=>s.box.toRoi}: _*)
     //check segmentation area
     val segmentArea = segments.map{s=>(s.box.x2-s.box.x)*(s.box.y2-s.box.y)}.sum
     val imageArea = imp2.getWidth * imp2.getHeight
@@ -197,7 +197,7 @@ class GappedImageSegmenter extends ImageSegmenter {
         }
       }
     }
-    log(imp2, "recover small components", recovered.map{s=>s.box.toRoi}: _*)
+    log(imp2, "[GappedImageSegmenter] recover small components", recovered.map{s=>s.box.toRoi}: _*)
     recovered
   }
 

@@ -45,8 +45,8 @@ class GappedImageSegmenter extends ImageSegmenter {
       new Roi(
         rt.getValue("BX", i).toInt,
         rt.getValue("BY", i).toInt,
-        rt.getValue("BX", i).toInt+rt.getValue("Width", i).toInt-1,
-        rt.getValue("BY", i).toInt+rt.getValue("Height", i).toInt-1)}
+        rt.getValue("Width", i).toInt,
+        rt.getValue("Height", i).toInt)}
     log(imp2, s"[GappedImageSegmenter] Particle Analyzer", particles: _*)
 
     // Get the objects and iterate through them

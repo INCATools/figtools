@@ -14,6 +14,18 @@ object EdgeDetectors {
     def run(imp: ImagePlus): ImagePlus
   }
 
+  case object ImageJ extends EdgeDetector {
+    def run(imp: ImagePlus): ImagePlus = {
+      logger.info("running ImageJ edge detector, this may take some time...")
+      val edgeImage = imp.duplicate()
+      IJ.run(edgeImage, "Find Edges", "")
+      log(edgeImage, "[ImageJ] edge image")
+      // binarize the edge image
+      IJ.run(edgeImage, "Make Binary", "")
+      log(edgeImage, "[ImageJ] binarized edge image")
+      edgeImage
+    }
+  }
   case object Susan extends EdgeDetector {
     def run(imp: ImagePlus): ImagePlus = {
       logger.info("running Susan edge detector, this may take some time...")

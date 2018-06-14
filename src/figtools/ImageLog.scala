@@ -4,6 +4,7 @@ import java.util.Scanner
 
 import com.typesafe.scalalogging.Logger
 import ij.gui.Roi
+import ij.io.FileSaver
 import ij.plugin.frame.RoiManager
 import ij.process.Blitter
 import ij.{IJ, ImagePlus, WindowManager}
@@ -12,14 +13,15 @@ import javax.swing.SwingUtilities
 object ImageLog {
   val logger = Logger("FigTools")
   def log(imp_ : ImagePlus, description: String, rois: Any*): Unit = {
-    logger.info(s"${imp_.getTitle}: $description: Rois: ${pprint.apply(rois, height=999999)}")
+    logger.info(s"${imp_.getTitle}: $description: Rois: ${pprint.apply(rois, height=50)}")
     SwingUtilities.invokeAndWait(()=>{
       val imp = imp_.duplicate()
       // get currently displayed image
-      val currentImp = WindowManager.getCurrentImage
-      if (currentImp == null) {
-        throw new RuntimeException("Could not log images: No active image")
-      }
+      val currentImp = Option(WindowManager.getCurrentImage).getOrElse({
+        val i = IJ.createImage(imp.getTitle, "RGB white", imp.getWidth, imp.getHeight, 1)
+        i.show()
+        i
+      })
       // resize canvas if necessary
       if (imp.getWidth > currentImp.getWidth || imp.getHeight > currentImp.getHeight) {
         val width = math.max(imp.getWidth, currentImp.getWidth)
@@ -58,8 +60,9 @@ object ImageLog {
         }
         rm.runCommand(currentImp, "Show All with labels")
       }
+      currentImp.changes = false
     })
-    promptEnterKey()
+    //promptEnterKey()
   }
 
   def promptEnterKey(): Unit = {

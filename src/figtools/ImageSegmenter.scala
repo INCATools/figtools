@@ -11,8 +11,8 @@ trait ImageSegmenter {
 object ImageSegmenter {
   case class Box[T](x: T, y: T, x2: T, y2: T)(implicit num: Numeric[T]) {
     import num._
-    def width: T = x2 - x
-    def height: T = y2 - y
+    def width: T = x2 - x + 1.asInstanceOf[T]
+    def height: T = y2 - y + 1.asInstanceOf[T]
     def toArchery: archery.Box = archery.Box(x.toFloat, y.toFloat, x2.toFloat, y2.toFloat)
     def toRoi: Roi = new Roi(x.toDouble, y.toDouble, width.toDouble, height.toDouble)
   }

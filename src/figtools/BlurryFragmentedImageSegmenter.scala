@@ -1,10 +1,7 @@
 package figtools
 
 import figtools.ImageSegmenter.ImageSegment
-import ij.process.FloatProcessor
 import ij.{IJ, ImagePlus}
-import org.openimaj.image.FImage
-import org.openimaj.image.processing.edges.SUSANEdgeDetector
 import ImageLog.log
 import com.typesafe.scalalogging.Logger
 
@@ -16,7 +13,7 @@ class BlurryFragmentedImageSegmenter extends ImageSegmenter {
   override def segment(imp: ImagePlus): Seq[ImageSegment] = {
     //log(imp, "[BlurryFragmentedImageSegmenter] original image")
 
-    val edgeDetector = FigTools.edgeDetectors(FigTools.config.asInstanceOf[Analyze].edgeDetector)
+    val edgeDetector = FigTools.edgeDetectors(FigTools.analyze.edgeDetector)
     val edgeImage = edgeDetector.run(imp)
 
     // find minimum gap width using xycut

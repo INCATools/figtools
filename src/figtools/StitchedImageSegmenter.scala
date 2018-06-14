@@ -6,7 +6,7 @@ import ImageLog.log
 import com.typesafe.scalalogging.Logger
 
 class StitchedImageSegmenter extends ImageSegmenter {
-  val logger = Logger("FigTools")
+  val logger = Logger("StitchedImageSegmenter")
 
   override def segment(imp: ImagePlus): Seq[ImageSegment] = {
     val edgeDetector = FigTools.edgeDetectors(FigTools.analyze.edgeDetector)

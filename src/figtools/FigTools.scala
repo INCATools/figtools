@@ -214,6 +214,9 @@ object FigTools {
 
             // wait for user to close the image
             while (WindowManager.getWindowCount > 0) Thread.sleep(200)
+
+            // collect garbage
+            System.gc()
           }
         }
       }

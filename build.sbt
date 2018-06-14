@@ -65,8 +65,10 @@ lazy val figtools = (project in file(".")).
       } yield {(location,s"""test ! -e "$location" && mkdir -p "${new File(location).getParent}" && (set -x; curl -Sso "$location" '$originLocation')""")}).unzip
       val prependShellScript =
         s"""#!/usr/bin/env bash
+${"""PCTMEMORY=${PCTMEMORY-75}
+MEMORY=${MEMORY-$(m=$(sysctl -n hw.memsize 2>/dev/null || free -b|perl -0777 -ne 'print [/^Mem:\s+([0-9]+)/ms]->[0]' 2>/dev/null ||true); [[ -n $m ]] && echo $(( m * $PCTMEMORY / 100 / 1048576 ))m)}"""}
 ${depsScript.mkString("\n")}
-TF_CPP_MIN_LOG_LEVEL=3 exec java $${DEBUG+-agentlib:jdwp=transport=dt_socket,server=y,address=$DebugPort,suspend=n} -noverify -XX:+UseG1GC $$JAVA_OPTS -cp "$$0:${deps.mkString(":")}" "${(mainClass in Compile).value.get}" "$$@"
+TF_CPP_MIN_LOG_LEVEL=3 exec java $${DEBUG+-agentlib:jdwp=transport=dt_socket,server=y,address=$DebugPort,suspend=n} -noverify -XX:+UseG1GC "-Xmx$$MEMORY" $$JAVA_OPTS -cp "$$0:${deps.mkString(":")}" "${(mainClass in Compile).value.get}" "$$@"
 """
       val prependScript = (baseDirectory.value / "target" / s"${(mainClass in Compile).value.get}.prependShellScript.sh").toString
       Files.write(Paths.get(prependScript), prependShellScript.getBytes(StandardCharsets.UTF_8))

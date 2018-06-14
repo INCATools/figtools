@@ -9,7 +9,7 @@ import scala.util.matching.Regex
 import com.typesafe.scalalogging.Logger
 
 object CaptionSegmenter {
-  val logger = Logger("SegmentCaption")
+  val logger = Logger("CaptionSegmenter")
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
 
   def segmentCaption(caption: String): Seq[CaptionGroup] = {

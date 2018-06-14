@@ -1,0 +1,35 @@
+package figtools
+
+import ij.process.FloatProcessor
+import ij.{IJ, ImagePlus}
+import org.openimaj.image.FImage
+import org.openimaj.image.processing.edges.SUSANEdgeDetector
+import ImageLog.log
+import com.typesafe.scalalogging.Logger
+
+object EdgeDetectors {
+  val logger = Logger("EdgeDetectors")
+
+  trait EdgeDetector {
+    def run(imp: ImagePlus): ImagePlus
+  }
+
+  case object Susan extends EdgeDetector {
+    def run(imp: ImagePlus): ImagePlus = {
+      logger.info("running Susan edge detector, this may take some time...")
+      val fimage = new FImage(imp.getProcessor.getFloatArray)
+      val Threshold = 0.08
+      val NMax = 9
+      val Radius = 3.4
+      val susan = SUSANEdgeDetector.smoothCircularSusan(fimage, Threshold, NMax, Radius)
+      val edgeImage = new ImagePlus(
+        imp.getTitle,
+        new FloatProcessor(susan.pixels).convertToByteProcessor())
+      log(edgeImage, "[Susan] edge image")
+      // binarize the edge image
+      IJ.run(edgeImage, "Make Binary", "")
+      log(edgeImage, "[Susan] binarized edge image")
+      edgeImage
+    }
+  }
+}

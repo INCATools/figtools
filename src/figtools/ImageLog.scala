@@ -12,6 +12,7 @@ import javax.swing.SwingUtilities
 object ImageLog {
   val logger = Logger("FigTools")
   def log(imp_ : ImagePlus, description: String, rois: Any*): Unit = {
+    logger.info(s"${imp_.getTitle}: $description: Rois: ${pprint.apply(rois, height=999999)}")
     SwingUtilities.invokeAndWait(()=>{
       val imp = imp_.duplicate()
       // get currently displayed image
@@ -44,13 +45,13 @@ object ImageLog {
         rm.runCommand("UseNames", "true")
 
         currentImp.setSlice(sliceNum)
-        for (r <- rois) {
+        for ((r,i) <- rois.zipWithIndex) {
           r match {
             case (label: String,roi: Roi) =>
+              roi.setName(label)
               rm.addRoi(roi)
-              val index = rm.getRoiIndex(roi)
-              rm.rename(index, label)
             case roi: Roi =>
+              roi.setName(s"Roi${i+1}")
               rm.addRoi(roi)
             case _ => throw new RuntimeException(s"Could not parse ROI argument: $r")
           }
@@ -58,7 +59,6 @@ object ImageLog {
         rm.runCommand(currentImp, "Show All with labels")
       }
     })
-    logger.info(s"${imp_.getTitle}: $description: Rois: ${pprint.apply(rois)}")
     promptEnterKey()
   }
 

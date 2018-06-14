@@ -33,7 +33,7 @@ lazy val figtools = (project in file(".")).
     resolvers += "openimaj-snapshots-maven" at "http://snapshots.openimaj.org/",
     resolvers += Resolver.sonatypeRepo("snapshots"),
     libraryDependencies ++= Seq(
-      "com.github.scopt" %% "scopt" % "3.6.0",
+      "info.picocli" % "picocli" % "3.1.0",
       "net.imagej" % "ij" % "1.52c",
       "net.sourceforge.tess4j" % "tess4j" % "3.4.0",
       "edu.stanford.nlp" % "stanford-corenlp" % "3.8.0",
@@ -48,7 +48,8 @@ lazy val figtools = (project in file(".")).
       "org.spire-math" %% "archery" % "0.6.0",
       "org.openimaj" % "image-processing" % "1.3.6",
       "org.tsers.zeison" %% "zeison" % "0.8.0-SNAPSHOT",
-      "fr.inra.ijpb" % "MorphoLibJ_" % "1.3.4"
+      "fr.inra.ijpb" % "MorphoLibJ_" % "1.3.4",
+      "sc.fiji" % "imagescience" % "3.0.0"
     ),
     artifactPath in (Compile, packageBin) := {
       baseDirectory.value / "bin" / name.value

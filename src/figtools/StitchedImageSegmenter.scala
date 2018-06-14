@@ -2,10 +2,6 @@ package figtools
 
 import figtools.ImageSegmenter.ImageSegment
 import ij.ImagePlus
-import ij.IJ
-import ij.process.FloatProcessor
-import org.openimaj.image.FImage
-import org.openimaj.image.processing.edges.SUSANEdgeDetector
 import ImageLog.log
 import com.typesafe.scalalogging.Logger
 
@@ -13,20 +9,8 @@ class StitchedImageSegmenter extends ImageSegmenter {
   val logger = Logger("FigTools")
 
   override def segment(imp: ImagePlus): Seq[ImageSegment] = {
-    // get edge image
-    logger.info("running SUSAN edge detector, this may take some time...")
-    val fimage = new FImage(imp.getProcessor.getFloatArray)
-    val Threshold = 0.08
-    val NMax = 9
-    val Radius = 3.4
-    val susan = SUSANEdgeDetector.smoothCircularSusan(fimage, Threshold, NMax, Radius)
-    val edgeImage = new ImagePlus(
-      imp.getTitle,
-      new FloatProcessor(susan.pixels).convertToByteProcessor())
-    log(edgeImage, "[StitchedImageSegmenter] edge image")
-    // binarize the edge image
-    IJ.run(edgeImage, "Make Binary", "")
-    log(edgeImage, "[StitchedImageSegmenter] binarized edge image")
+    val edgeDetector = FigTools.edgeDetectors(FigTools.config.asInstanceOf[Analyze].edgeDetector)
+    val edgeImage = edgeDetector.run(imp)
 
     val segments = segment0(ImageSegment(edgeImage, ImageSegmenter.Box(0, 0, imp.getWidth, imp.getHeight)))
     log(imp, "[StitchedImageSegmenter] split into segments", segments.map{s=>s.box.toRoi}: _*)

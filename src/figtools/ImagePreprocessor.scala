@@ -10,7 +10,7 @@ import scala.util.control.Breaks._
 
 class ImagePreprocessor {
   def preprocess(imp: ImagePlus): ImagePlus = {
-    log(imp, "[ImagePreprocessor] original image")
+    //log(imp, "[ImagePreprocessor] original image")
 
     // convert to 8-bit grayscale
     new ImageConverter(imp).convertToGray8()

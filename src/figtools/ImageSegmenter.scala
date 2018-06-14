@@ -28,6 +28,8 @@ object ImageSegmenter {
     if (segments.isEmpty) {
       segments = new BlurryFragmentedImageSegmenter().segment(preprocessed)
     }
-    segments
+    // resize the the segments by 0.5x back to 1x
+    segments.map{s=>ImageSegment(s.imp,
+      Box(s.box.x / 2, s.box.y / 2, s.box.x2 / 2, s.box.y2 / 2))}
   }
 }

@@ -6,7 +6,6 @@ import better.files._
 import com.typesafe.scalalogging.Logger
 import edu.stanford.nlp.ling.CoreAnnotations.SentencesAnnotation
 import edu.stanford.nlp.pipeline.{Annotation, StanfordCoreNLP}
-import scopt.OptionParser
 
 import sys.process._
 import collection.JavaConverters._
@@ -15,48 +14,64 @@ import figtools.CaptionSegmenter.CaptionGroup
 import figtools.ImageSegmenter.ImageSegment
 import ij.{ImageJ, ImagePlus}
 import ij.io.Opener
-import ij.plugin.frame.RoiManager
 import net.sourceforge.tess4j.ITessAPI.TessPageIteratorLevel
 
 import util.control.Breaks._
 import scala.collection.mutable.ArrayBuffer
-import net.sourceforge.tess4j.Tesseract
+import net.sourceforge.tess4j.{Tesseract, Word}
 import org.tsers.zeison.Zeison
+import ImageLog.log
+import ij.gui.Roi
+import picocli.CommandLine
+import picocli.CommandLine.{Command, HelpCommand, RunAll, Option => option}
 
 import scala.collection.mutable
 
+@Command(
+  name="figtools",
+  version=Array("0.1.0"),
+  mixinStandardHelpOptions=true,
+  description=Array("Tools for publication figure segmentation, annotation, and analysis."),
+  subcommands=Array(classOf[Analyze], classOf[HelpCommand]))
+class Config() extends Runnable {
+  override def run: Unit = { }
+}
+
+@Command(
+  name="analyze",
+  mixinStandardHelpOptions=true,
+  description=Array("Recursively analyze and segment a directory full of publication images."),
+  showDefaultValues=true)
+class Analyze() extends Runnable {
+  @option(names=Array("--pdf-export-resolution"),
+    paramLabel="DPI",
+    description=Array("Resolution to use when exporting PDFs to images"))
+  var pdfExportResolution: Int = 300
+  @option(names=Array("--edge-detector"),
+    paramLabel="MODULE",
+    description=Array("""Edge detector to use. Possible values: "susan""""))
+  var edgeDetector: String = "susan"
+  override def run { FigTools.analyze(this) }
+}
 
 object FigTools {
   val logger = Logger("FigTools")
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
-
-  case class Config(mode: String = "",
-                    pdfExportResolution: Int = 300)
+  val edgeDetectors = Map("susan"->EdgeDetectors.Susan)
+  var config: Config = null
 
   def main(args: Array[String]): Unit = {
-    val parser = new OptionParser[Config]("figtools") {
-      override def showUsageOnError = true
-      head("figtools", "0.1.0")
-      help("help").text("prints this usage text")
-      version("version").text("print the program version")
-      cmd("analyze").action((_, c) => c.copy(mode = "analyze")).
-        text("recursively analyze a nested directory of figures.").
-        children(
-          opt[Int]("pdf-export-resolution").action((x,c) => c.copy(pdfExportResolution = x)).
-            text("Resolution to use when exporting PDFs to images"))
-    }
-    parser.parse(args, Config()) match {
-      case Some(config) =>
-        config.mode match {
-          case "analyze" => analyze(config)
-          case "" => parser.showUsage()
-        }
-      case None =>
-        System.exit(1)
-    }
+    val cmdLine = new CommandLine(new Config())
+    cmdLine.parseWithHandler(new RunAll(), args)
+    cmdLine.usage(Console.err)
+    sys.exit(1)
   }
 
-  def analyze(config: Config): Unit = {
+  def analyze(config: Analyze): Unit = {
+    if (!edgeDetectors.contains(config.edgeDetector)) {
+      Console.err.println(s"Unknown edge detector module: ${config.edgeDetector}")
+      sys.exit(1)
+    }
     // turn off CoreNLP logging
     RedwoodConfiguration.current.clear.apply()
     val props = new Properties()
@@ -131,10 +146,11 @@ object FigTools {
           val hasCaptions = captionGroups.flatMap{cg=>cg.captions}.flatMap{cs=>cs.label}.toSet
 
           val foundCaptions = mutable.Set[String]()
-          val segmentDescription = mutable.Map[ImageSegment, CaptionGroup]()
+          val segmentDescription = mutable.Map[ImageSegment, (CaptionGroup, Word)]()
 
           val segments = ImageSegmenter.segment(imp)
-          for (segment <- segments) {
+          log(imp, "[FigTools] split into segments", segments.map{s=>s.box.toRoi}: _*)
+          for ((segment,i) <- segments.zipWithIndex) {
             imp.getProcessor.setRoi(segment.box.toRoi)
             val cropped = new ImagePlus(imp.getTitle, imp.getProcessor.crop())
             // use tesseract OCR
@@ -142,6 +158,15 @@ object FigTools {
             val bi = cropped.getBufferedImage
             val words = instance.getWords(bi, TessPageIteratorLevel.RIL_WORD).asScala.
               sortBy(x=>(-(x.getBoundingBox.width * x.getBoundingBox.height), -x.getConfidence))
+            logger.info(s"seg${i+1} words: ${pprint.apply(words, height=9999999)}")
+            log(imp, s"[FigTools] Run tesseract OCR on seg${i+1}",
+              Seq(s"seg${i+1}"->segment.box.toRoi) ++
+              words.map{w=>
+                w.getText->new Roi(
+                  w.getBoundingBox.x+segment.box.x,
+                  w.getBoundingBox.y+segment.box.y,
+                  w.getBoundingBox.x+segment.box.x+w.getBoundingBox.width-1,
+                  w.getBoundingBox.y+segment.box.y+w.getBoundingBox.height-1)}: _*)
             for (word <- words) {
               val box = word.getBoundingBox
               val confidence = word.getConfidence
@@ -153,7 +178,7 @@ object FigTools {
                 label <- caption.label
               } {
                 if (hasCaptions.contains(label) && !foundCaptions.contains(label)) {
-                  segmentDescription(segment) = captionGroup
+                  segmentDescription(segment) = (captionGroup, word)
                 }
               }
               logger.info(s"Tesseract OCR text: (box: ${pp(box)}, confidence: $confidence)='$text'")
@@ -161,20 +186,24 @@ object FigTools {
           }
 
           // show
-          val rm = RoiManager.getRoiManager
-          rm.runCommand(imp, "Show All with labels")
-          for ((segment, captionGroup) <- segmentDescription) {
+          val captionLabels = ArrayBuffer[(String,Roi)]()
+          for ((segment, (captionGroup, word)) <- segmentDescription) {
             val label = captionGroup.captions.flatMap{c=>c.label}.distinct.sorted.mkString(" ")
             val roi = segment.box.toRoi
-            rm.addRoi(roi)
-            val index = rm.getRoiIndex(roi)
-            rm.rename(index, label)
+            captionLabels += label->roi
+            captionLabels += word.getText->new Roi(
+              word.getBoundingBox.x+segment.box.x,
+              word.getBoundingBox.y+segment.box.y,
+              word.getBoundingBox.x+segment.box.x+word.getBoundingBox.width-1,
+              word.getBoundingBox.y+segment.box.y+word.getBoundingBox.height-1)
           }
+          log(imp, "[FigTools] Show caption labels", captionLabels: _*)
 
           // wait for user to close the image
           while (imp.isVisible) Thread.sleep(200)
         }
       }
     }
+    sys.exit(0)
   }
 }

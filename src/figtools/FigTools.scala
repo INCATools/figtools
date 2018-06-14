@@ -12,7 +12,7 @@ import collection.JavaConverters._
 import edu.stanford.nlp.util.logging.RedwoodConfiguration
 import figtools.CaptionSegmenter.CaptionGroup
 import figtools.ImageSegmenter.ImageSegment
-import ij.{IJ, ImageJ, ImagePlus, WindowManager}
+import ij.{IJ, ImageJ, WindowManager}
 import ij.io.Opener
 import net.sourceforge.tess4j.ITessAPI.TessPageIteratorLevel
 
@@ -53,7 +53,7 @@ object FigTools {
     override def run(): Unit = { }
   }
 
-  var analyze: Analyze = null
+  var analyze: Analyze = _
   @Command(
     name="analyze",
     mixinStandardHelpOptions=true,

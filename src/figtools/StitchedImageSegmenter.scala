@@ -30,11 +30,12 @@ class StitchedImageSegmenter extends ImageSegmenter {
     val MinPeakRatio = 0.7
     val horizProj = Array.ofDim[Long](segment.box.width)
     val vertProj = Array.ofDim[Long](segment.box.height)
-    for (y <- segment.box.y to segment.box.y2) {
-      for (x <- segment.box.x to segment.box.x2) {
-        horizProj(x-segment.box.x) += (if (imp.getProcessor.getPixel(x, y) == 0) 0 else 1)
-        vertProj(y-segment.box.y) += (if (imp.getProcessor.getPixel(x, y) == 0) 0 else 1)
-      }
+    for {
+      y <- segment.box.y to segment.box.y2
+      x <- segment.box.x to segment.box.x2
+    } {
+      horizProj(x-segment.box.x) += (if (imp.getProcessor.getPixel(x, y) == 0) 0 else 1)
+      vertProj(y-segment.box.y) += (if (imp.getProcessor.getPixel(x, y) == 0) 0 else 1)
     }
     val MinSegmentSize = 0.1
     var bestHoriz = 0L
@@ -63,7 +64,7 @@ class StitchedImageSegmenter extends ImageSegmenter {
     }
 
     // if no peak exists, return whole segment
-    val segments = if (bestHoriz == 0 && bestVert == 0) {
+    if (bestHoriz == 0 && bestVert == 0) {
       Seq(segment)
     }
     // return horizontally split segments
@@ -92,6 +93,5 @@ class StitchedImageSegmenter extends ImageSegmenter {
         segment.box.x2,
         segment.box.y2)))
     }
-    segments
   }
 }

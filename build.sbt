@@ -49,7 +49,8 @@ lazy val figtools = (project in file(".")).
       "org.openimaj" % "image-processing" % "1.3.6",
       "org.tsers.zeison" %% "zeison" % "0.8.0-SNAPSHOT",
       "fr.inra.ijpb" % "MorphoLibJ_" % "1.3.4",
-      "sc.fiji" % "imagescience" % "3.0.0"
+      "sc.fiji" % "imagescience" % "3.0.0",
+      "com.softwaremill.sttp" %% "core" % "1.2.0"
     ),
     artifactPath in (Compile, packageBin) := {
       baseDirectory.value / "bin" / name.value

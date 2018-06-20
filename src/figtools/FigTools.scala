@@ -23,7 +23,7 @@ import org.tsers.zeison.Zeison
 import ImageLog.log
 import ij.gui.Roi
 import picocli.CommandLine
-import picocli.CommandLine.{Command, HelpCommand, RunAll, Option => option}
+import picocli.CommandLine.{Command, HelpCommand, Parameters, RunAll, Option => option}
 
 import scala.collection.mutable
 
@@ -48,7 +48,14 @@ object FigTools {
     version=Array("0.1.0"),
     mixinStandardHelpOptions=true,
     description=Array("Tools for publication figure segmentation, annotation, and analysis."),
-    subcommands=Array(classOf[Analyze], classOf[HelpCommand]))
+    subcommands=Array(
+      classOf[Analyze],
+      classOf[Get],
+      classOf[List],
+      classOf[Search],
+      classOf[Download],
+      classOf[DownloadAll],
+      classOf[HelpCommand]))
   class Config() extends Runnable {
     override def run(): Unit = { }
   }
@@ -222,4 +229,116 @@ object FigTools {
       }
     }
   }
+
+  @Command(
+    name="get",
+    mixinStandardHelpOptions=true,
+    description=Array("Get metadata for FigShare IDs."),
+    showDefaultValues=true)
+  class Get() extends Runnable {
+    @option(names=Array("-u","--url"),
+      paramLabel="URL",
+      description=Array("URL of FigShare API"))
+    var url: String = "http://api.figshare.com/v1"
+    @Parameters(description=Array("List of FigShare IDs"))
+    var figShareIDs: java.util.List[String] = new java.util.ArrayList()
+    override def run(): Unit = {
+      if (figShareIDs.isEmpty) {
+        CommandLine.run(this, "--help")
+        sys.exit(1)
+      }
+      for (id <- figShareIDs.asScala) {
+        val json = new FigShareApi(url).get(id)
+        println(Zeison.renderPretty(json))
+      }
+    }
+  }
+
+  @Command(
+    name="list",
+    mixinStandardHelpOptions=true,
+    description=Array("List FigShare IDs"),
+    showDefaultValues=true)
+  class List() extends Runnable {
+    @option(names=Array("-u","--url"),
+      paramLabel="URL",
+      description=Array("URL of FigShare API"))
+    var url: String = "http://api.figshare.com/v1"
+    override def run(): Unit = {
+      new FigShareApi(url).list()
+    }
+  }
+
+  @Command(
+    name="search",
+    mixinStandardHelpOptions=true,
+    description=Array("Search for FigShare IDs"),
+    showDefaultValues=true)
+  class Search() extends Runnable {
+    @option(names=Array("-u","--url"),
+      paramLabel="URL",
+      description=Array("URL of FigShare API"))
+    var url: String = "http://api.figshare.com/v1"
+    @Parameters(description=Array("List of search terms"))
+    var searchTerms: java.util.List[String] = new java.util.ArrayList()
+    override def run(): Unit = {
+      if (searchTerms.isEmpty) {
+        CommandLine.run(this, "--help")
+        sys.exit(1)
+      }
+      for (term <- searchTerms.asScala) {
+        new FigShareApi(url).search(term)
+      }
+    }
+  }
+
+  @Command(
+    name="download",
+    mixinStandardHelpOptions=true,
+    description=Array("Download figures from figtools into the current directory."),
+    showDefaultValues=true)
+  class Download() extends Runnable {
+    @option(names=Array("-u","--url"),
+      paramLabel="URL",
+      description=Array("URL of FigShare API"))
+    var url: String = "http://api.figshare.com/v1"
+    @option(names=Array("-o","--outdir"),
+      paramLabel="DIR",
+      description=Array("Output directory"))
+    var outDir: String = "."
+
+    @Parameters(description=Array("List of FigShare IDs"))
+    var figShareIDs: java.util.List[String] = new java.util.ArrayList()
+
+    override def run(): Unit = {
+      if (figShareIDs.isEmpty) {
+        CommandLine.run(this, "--help")
+        sys.exit(1)
+      }
+      for (id <- figShareIDs.asScala) {
+        new FigShareApi(url).download(id, outDir)
+      }
+    }
+  }
+
+  @Command(
+    name="downloadall",
+    mixinStandardHelpOptions=true,
+    description=Array("Download *ALL* figures from figtools into the current directory."),
+    showDefaultValues=true)
+  class DownloadAll() extends Runnable {
+    @option(names=Array("-u","--url"),
+      paramLabel="URL",
+      description=Array("URL of FigShare API"))
+    var url: String = "http://api.figshare.com/v1"
+    @option(names=Array("-o","--outdir"),
+      paramLabel="DIR",
+      description=Array("Output directory"))
+    var outDir: String = "."
+
+    override def run(): Unit = {
+      new FigShareApi(url).downloadAll(outDir)
+    }
+  }
+
 }

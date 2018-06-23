@@ -6,10 +6,10 @@ import caseapp.core.help.WithHelp
 
 sealed abstract class Main extends Product with Serializable
 
-case class
-CommonOptions(@HelpMessage("URL of FigShare API")
-              @ValueDescription("URL")
-              url: String = "http://api.figshare.com/v1")
+case class CommonOptions(
+  @HelpMessage("URL of FigShare API")
+  @ValueDescription("URL")
+  url: String = "http://api.figshare.com/v1")
 
 @HelpMessage("Get metadata for FigShare IDs")
 @ArgsName("List of FigShare IDs")

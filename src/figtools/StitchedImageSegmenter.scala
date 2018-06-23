@@ -9,7 +9,7 @@ class StitchedImageSegmenter extends ImageSegmenter {
   val logger = Logger("StitchedImageSegmenter")
 
   override def segment(imp: ImagePlus): Seq[ImageSegment] = {
-    val edgeDetector = FigTools.edgeDetectors(FigTools.analyze.edgeDetector)
+    val edgeDetector = FigTools.edgeDetectors(FigTools.edgeDetector)
     val edgeImage = edgeDetector.run(imp)
 
     val segments = segment0(ImageSegment(edgeImage,

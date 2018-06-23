@@ -13,7 +13,7 @@ class BlurryFragmentedImageSegmenter extends ImageSegmenter {
   override def segment(imp: ImagePlus): Seq[ImageSegment] = {
     //log(imp, "[BlurryFragmentedImageSegmenter] original image")
 
-    val edgeDetector = FigTools.edgeDetectors(FigTools.analyze.edgeDetector)
+    val edgeDetector = FigTools.edgeDetectors(FigTools.edgeDetector)
     val edgeImage = edgeDetector.run(imp)
 
     // find minimum gap width using xycut

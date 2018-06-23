@@ -33,7 +33,7 @@ lazy val figtools = (project in file(".")).
     resolvers += "openimaj-snapshots-maven" at "http://snapshots.openimaj.org/",
     resolvers += Resolver.sonatypeRepo("snapshots"),
     libraryDependencies ++= Seq(
-      "info.picocli" % "picocli" % "3.1.0",
+      "com.github.alexarchambault" %% "case-app" % "2.0.0-M3",
       "net.imagej" % "ij" % "1.52c",
       "net.sourceforge.tess4j" % "tess4j" % "3.4.0",
       "edu.stanford.nlp" % "stanford-corenlp" % "3.8.0",

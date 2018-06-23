@@ -1,344 +1,109 @@
 package figtools
-import java.util.Properties
-import java.util.regex.Pattern
-
-import better.files._
 import com.typesafe.scalalogging.Logger
-import edu.stanford.nlp.ling.CoreAnnotations.SentencesAnnotation
-import edu.stanford.nlp.pipeline.{Annotation, StanfordCoreNLP}
-
-import sys.process._
-import collection.JavaConverters._
-import edu.stanford.nlp.util.logging.RedwoodConfiguration
-import figtools.CaptionSegmenter.CaptionGroup
-import figtools.ImageSegmenter.ImageSegment
-import ij.{IJ, ImageJ, WindowManager}
-import ij.io.Opener
-import net.sourceforge.tess4j.ITessAPI.TessPageIteratorLevel
-
-import util.control.Breaks._
-import scala.collection.mutable.ArrayBuffer
-import net.sourceforge.tess4j.{Tesseract, Word}
 import org.tsers.zeison.Zeison
-import ImageLog.log
-import ij.gui.Roi
-import picocli.CommandLine
-import picocli.CommandLine.{Command, HelpCommand, Parameters, RunAll, Option => option}
+import caseapp._
+import caseapp.core.help.WithHelp
 
-import scala.collection.mutable
+sealed abstract class Main extends Product with Serializable
 
-object FigTools {
+case class
+CommonOptions(@HelpMessage("URL of FigShare API")
+              @ValueDescription("URL")
+              url: String = "http://api.figshare.com/v1")
+
+@HelpMessage("Get metadata for FigShare IDs")
+@ArgsName("List of FigShare IDs")
+final case class Get(@Recurse common: CommonOptions) extends Main
+
+@HelpMessage("List FigShare IDs")
+final case class List(@Recurse common: CommonOptions) extends Main
+
+@HelpMessage("Search for FigShare IDs")
+@ArgsName("List of search terms")
+final case class Search(@Recurse common: CommonOptions) extends Main
+
+@HelpMessage("Download figures from figtools into the current directory")
+@ArgsName("List of FigShare IDs")
+final case class Download(
+  @Recurse common: CommonOptions,
+  @HelpMessage("Output directory")
+  @ValueDescription("DIRECTORY")
+  outDir: String = "."
+) extends Main
+
+@HelpMessage("Download *ALL* figures from figtools into the current directory.")
+final case class DownloadAll(
+  @Recurse common: CommonOptions,
+  @HelpMessage("Output directory")
+  @ValueDescription("DIRECTORY")
+  outDir: String = "."
+) extends Main
+
+@HelpMessage("Recursively analyze and segment a directory full of publication images.")
+final case class Analyze(
+  @HelpMessage("Resolution to use when exporting PDFs to images")
+  @ValueDescription("DPI")
+  pdfExportResolution: Int = 300,
+  @HelpMessage("Edge detector to use. Possible values: susan imagej")
+  @ValueDescription("MODULE")
+  edgeDetector: String = "imagej"
+) extends Main
+
+object FigTools extends CommandApp[Main] {
+  override def appName: String = "FigTools"
+  override def appVersion: String = "0.1.0"
+  override def progName: String = "figtools"
+
   val logger = Logger("FigTools")
-  val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
   val edgeDetectors = Map(
     "susan"->EdgeDetectors.Susan,
     "imagej"->EdgeDetectors.ImageJ)
+  var edgeDetector: String = _
+  var pdfExportResolution: Int = _
 
-  def main(args: Array[String]): Unit = {
-    val cmdLine = new CommandLine(new Config())
-    if (args.isEmpty) {
-      cmdLine.usage(Console.err)
-      sys.exit(1)
-    }
-    cmdLine.parseWithHandler(new RunAll(), args)
-  }
-
-  @Command(
-    name="figtools",
-    version=Array("0.1.0"),
-    mixinStandardHelpOptions=true,
-    description=Array("Tools for publication figure segmentation, annotation, and analysis."),
-    subcommands=Array(
-      classOf[Analyze],
-      classOf[Get],
-      classOf[List],
-      classOf[Search],
-      classOf[Download],
-      classOf[DownloadAll],
-      classOf[HelpCommand]))
-  class Config() extends Runnable {
-    override def run(): Unit = { }
-  }
-
-  var analyze: Analyze = _
-  @Command(
-    name="analyze",
-    mixinStandardHelpOptions=true,
-    description=Array("Recursively analyze and segment a directory full of publication images."),
-    showDefaultValues=true)
-  class Analyze() extends Runnable {
-    @option(names=Array("--pdf-export-resolution"),
-      paramLabel="DPI",
-      description=Array("Resolution to use when exporting PDFs to images"))
-    var pdfExportResolution: Int = 300
-    @option(names=Array("--edge-detector"),
-      paramLabel="MODULE",
-      description=Array("""Edge detector to use. Possible values: susan imagej"""))
-    var edgeDetector: String = "imagej"
-    override def run() {
-      analyze = this
-      if (!FigTools.edgeDetectors.contains(edgeDetector)) {
-        Console.err.println(s"Unknown edge detector module: $edgeDetector")
-        sys.exit(1)
-      }
-      // turn off CoreNLP logging
-      RedwoodConfiguration.current.clear.apply()
-      val props = new Properties()
-      props.setProperty("annotators", "tokenize, ssplit, pos, lemma, ner, parse, dcoref")
-      val pipeline = new StanfordCoreNLP(props)
-
-      // start an embedded ImageJ instance
-      val imagej = new ImageJ(ImageJ.EMBEDDED)
-      imagej.exitWhenQuitting(true)
-
-      val dir = file"."
-      for (datapackage <- dir.listRecursively.filter(_.name == "datapackage.json")) {
-        val json = Zeison.parse(datapackage.contentAsString)
-        val description_nohtml = json.description_nohtml.toStr
-        logger.info(s"file=$datapackage")
-        logger.info(s"description_nohtml=\n$description_nohtml")
-
-        val document = new Annotation(description_nohtml)
-        pipeline.annotate(document)
-        val sentences = document.get(classOf[SentencesAnnotation])
-
-        for (sentence <- sentences.asScala) {
-          logger.info(s"sentence=${sentence.toString}")
+  override def main(args: Array[String]): Unit =
+    commandParser.withHelp.detailedParse(args)(beforeCommandParser.withHelp) match {
+      case Left(err) => error(err)
+      case Right((WithHelp(usage, help, d), dArgs, optCmd)) =>
+        if (help) helpAsked()
+        if (usage) usageAsked()
+        if (optCmd.isEmpty) helpAsked()
+        d.fold( error, beforeCommand(_, dArgs) )
+        optCmd.foreach {
+          case Left(err) =>
+            error(err)
+          case Right((c, WithHelp(commandUsage, commandHelp, t), commandArgs)) =>
+            if (commandHelp) commandHelpAsked(c)
+            if (commandUsage) commandUsageAsked(c)
+            t.fold( error, run(_, commandArgs) )
         }
-        logger.info("")
-
-        val resources = json.resources.toList
-        for (resource <- resources) {
-          breakable {
-            val name = resource.name.toStr
-            val imageFile = datapackage.parent / name
-            if (!imageFile.toString.matches("""(?i).*\.(png|jpe?g|tiff?|pdf)""")) {
-              logger.info(s"Skipping non-image file $imageFile")
-              break
-            }
-            val imageFiles = ArrayBuffer(imageFile)
-            if (imageFile.exists) {
-              // use the convert command-line tool to convert PDF files to image files
-              if (imageFile.extension.isDefined && imageFile.extension.get.toLowerCase == ".pdf") {
-                imageFiles.clear()
-                val cmd = Seq("convert", "-density", pdfExportResolution.toString, imageFile.toString, s"$imageFile.png")
-                val status = cmd.!
-                if (status != 0) {
-                  throw new RuntimeException(s"Command $cmd returned exit status $status")
-                }
-                val pngs = datapackage.parent.glob("*.png")
-                val outimages = pngs.filter(f =>
-                  f.name.toString.matches(raw"""^${Pattern.quote(imageFile.name.toString)}(-[0-9]+)?\.png$$"""))
-                imageFiles ++= outimages
-              }
-            }
-            else {
-              Console.err.println(s"Could not find file $imageFile")
-            }
-            if (imageFiles.size > 1) {
-              logger.warn(s"File $imageFile contains more than one image, skipping")
-              break
-            }
-            if (imageFiles.isEmpty) {
-              logger.info(s"File $imageFile contains no images, skipping")
-              break
-            }
-            val imageFileName =  imageFiles.head.toString
-            IJ.redirectErrorMessages(true)
-            logger.info(s"Opening image file $imageFileName")
-            val imp = new Opener().openImage(imageFileName)
-            if (imp == null) {
-              logger.warn(s"Could not open image file $imageFile, skipping")
-              break
-            }
-            log(imp, "[FigTools] original image")
-
-            val captionGroups = CaptionSegmenter.segmentCaption(description_nohtml)
-            logger.info(s"captionGroups=${pp(captionGroups)}")
-            val hasCaptions = captionGroups.flatMap{cg=>cg.captions}.flatMap{cs=>cs.label}.toSet
-            if (hasCaptions.size <= 1) {
-              logger.warn(s"File $imageFile only has a single caption, no need to segment the image.")
-              break
-            }
-
-            val foundCaptions = mutable.Set[String]()
-            val segmentDescription = mutable.Map[ImageSegment, (CaptionGroup, Word)]()
-
-            val segments = ImageSegmenter.segment(imp)
-            log(imp, "[FigTools] split into segments",
-              segments.zipWithIndex.map{case (s,i)=>s"seg${i+1}"->s.box.toRoi}: _*)
-            for ((segment,i) <- segments.zipWithIndex) {
-              val cropped = imp.duplicate()
-              cropped.setRoi(segment.box.toRoi)
-              IJ.run(cropped, "Crop", "")
-              //log(cropped, s"[FigTools] cropped segment seg${i+1}")
-              // use tesseract OCR
-              val instance = new Tesseract()
-              val bi = cropped.getBufferedImage
-              val words = instance.getWords(bi, TessPageIteratorLevel.RIL_WORD).asScala.
-                sortBy(x=>(-(x.getBoundingBox.width * x.getBoundingBox.height), -x.getConfidence))
-              logger.info(s"seg${i+1} words: ${pprint.apply(words, height=9999999)}")
-              log(imp, s"[FigTools] Run tesseract OCR on seg${i+1}",
-                Seq(s"seg${i+1}"->segment.box.toRoi) ++
-                  words.map{w=>
-                    w.getText->new Roi(
-                      w.getBoundingBox.x+segment.box.x,
-                      w.getBoundingBox.y+segment.box.y,
-                      w.getBoundingBox.width,
-                      w.getBoundingBox.height)}: _*)
-              for (word <- words) {
-                val box = word.getBoundingBox
-                val confidence = word.getConfidence
-                val text = word.getText
-                val captionGroups = CaptionSegmenter.segmentCaption(text)
-                for {
-                  captionGroup <- captionGroups
-                  caption <- captionGroup.captions
-                  label <- caption.label
-                } {
-                  if (hasCaptions.contains(label) && !foundCaptions.contains(label)) {
-                    segmentDescription(segment) = (captionGroup, word)
-                  }
-                }
-                logger.info(s"Tesseract OCR text: (box: ${pp(box)}, confidence: $confidence)='$text'")
-              }
-            }
-
-            // show
-            val captionLabels = ArrayBuffer[(String,Roi)]()
-            for ((segment, (captionGroup, word)) <- segmentDescription) {
-              val label = captionGroup.captions.flatMap{c=>c.label}.distinct.sorted.mkString(" ")
-              val roi = segment.box.toRoi
-              captionLabels += label->roi
-              captionLabels += word.getText->new Roi(
-                word.getBoundingBox.x+segment.box.x,
-                word.getBoundingBox.y+segment.box.y,
-                word.getBoundingBox.width,
-                word.getBoundingBox.height)
-            }
-            log(imp, "[FigTools] Show caption labels", captionLabels: _*)
-            logger.info(s"captionGroups=${pp(captionGroups)}")
-
-            // wait for user to close the image
-            while (WindowManager.getWindowCount > 0) Thread.sleep(200)
-
-            // collect garbage
-            System.gc()
-          }
+    }
+  def run(command: Main, args: RemainingArgs): Unit = {
+    command match {
+      case get: Get =>
+        if (args.remaining.isEmpty) commandHelpAsked("get")
+        for (id <- args.remaining) {
+          val json = new FigShareApi(get.common.url).get(id)
+          println(Zeison.renderPretty(json))
         }
-      }
+      case list: List =>
+        new FigShareApi(list.common.url).list()
+      case search: Search =>
+        if (args.remaining.isEmpty) commandHelpAsked("search")
+        for (term <- args.remaining) {
+          new FigShareApi(search.common.url).search(term)
+        }
+      case download: Download =>
+        if (args.remaining.isEmpty) commandHelpAsked("download")
+        for (id <- args.remaining) {
+          new FigShareApi(download.common.url).download(id, download.outDir)
+        }
+      case downloadAll: DownloadAll =>
+        new FigShareApi(downloadAll.common.url).downloadAll(downloadAll.outDir)
+      case analyze: Analyze =>
+        edgeDetector = analyze.edgeDetector
+        pdfExportResolution = analyze.pdfExportResolution
+        new AnalyzeImage(analyze.edgeDetector, analyze.pdfExportResolution).analyze()
     }
   }
-
-  @Command(
-    name="get",
-    mixinStandardHelpOptions=true,
-    description=Array("Get metadata for FigShare IDs."),
-    showDefaultValues=true)
-  class Get() extends Runnable {
-    @option(names=Array("-u","--url"),
-      paramLabel="URL",
-      description=Array("URL of FigShare API"))
-    var url: String = "http://api.figshare.com/v1"
-    @Parameters(description=Array("List of FigShare IDs"))
-    var figShareIDs: java.util.List[String] = new java.util.ArrayList()
-    override def run(): Unit = {
-      if (figShareIDs.isEmpty) {
-        CommandLine.run(this, "--help")
-        sys.exit(1)
-      }
-      for (id <- figShareIDs.asScala) {
-        val json = new FigShareApi(url).get(id)
-        println(Zeison.renderPretty(json))
-      }
-    }
-  }
-
-  @Command(
-    name="list",
-    mixinStandardHelpOptions=true,
-    description=Array("List FigShare IDs"),
-    showDefaultValues=true)
-  class List() extends Runnable {
-    @option(names=Array("-u","--url"),
-      paramLabel="URL",
-      description=Array("URL of FigShare API"))
-    var url: String = "http://api.figshare.com/v1"
-    override def run(): Unit = {
-      new FigShareApi(url).list()
-    }
-  }
-
-  @Command(
-    name="search",
-    mixinStandardHelpOptions=true,
-    description=Array("Search for FigShare IDs"),
-    showDefaultValues=true)
-  class Search() extends Runnable {
-    @option(names=Array("-u","--url"),
-      paramLabel="URL",
-      description=Array("URL of FigShare API"))
-    var url: String = "http://api.figshare.com/v1"
-    @Parameters(description=Array("List of search terms"))
-    var searchTerms: java.util.List[String] = new java.util.ArrayList()
-    override def run(): Unit = {
-      if (searchTerms.isEmpty) {
-        CommandLine.run(this, "--help")
-        sys.exit(1)
-      }
-      for (term <- searchTerms.asScala) {
-        new FigShareApi(url).search(term)
-      }
-    }
-  }
-
-  @Command(
-    name="download",
-    mixinStandardHelpOptions=true,
-    description=Array("Download figures from figtools into the current directory."),
-    showDefaultValues=true)
-  class Download() extends Runnable {
-    @option(names=Array("-u","--url"),
-      paramLabel="URL",
-      description=Array("URL of FigShare API"))
-    var url: String = "http://api.figshare.com/v1"
-    @option(names=Array("-o","--outdir"),
-      paramLabel="DIR",
-      description=Array("Output directory"))
-    var outDir: String = "."
-
-    @Parameters(description=Array("List of FigShare IDs"))
-    var figShareIDs: java.util.List[String] = new java.util.ArrayList()
-
-    override def run(): Unit = {
-      if (figShareIDs.isEmpty) {
-        CommandLine.run(this, "--help")
-        sys.exit(1)
-      }
-      for (id <- figShareIDs.asScala) {
-        new FigShareApi(url).download(id, outDir)
-      }
-    }
-  }
-
-  @Command(
-    name="downloadall",
-    mixinStandardHelpOptions=true,
-    description=Array("Download *ALL* figures from figtools into the current directory."),
-    showDefaultValues=true)
-  class DownloadAll() extends Runnable {
-    @option(names=Array("-u","--url"),
-      paramLabel="URL",
-      description=Array("URL of FigShare API"))
-    var url: String = "http://api.figshare.com/v1"
-    @option(names=Array("-o","--outdir"),
-      paramLabel="DIR",
-      description=Array("Output directory"))
-    var outDir: String = "."
-
-    override def run(): Unit = {
-      new FigShareApi(url).downloadAll(outDir)
-    }
-  }
-
 }

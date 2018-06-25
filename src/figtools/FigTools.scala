@@ -11,18 +11,14 @@ case class CommonOptions(
   @ValueDescription("URL")
   url: String = "http://api.figshare.com/v1")
 
-@HelpMessage("Get metadata for FigShare IDs")
 @ArgsName("List of FigShare IDs")
 final case class Get(@Recurse common: CommonOptions) extends Main
 
-@HelpMessage("List FigShare IDs")
 final case class List(@Recurse common: CommonOptions) extends Main
 
-@HelpMessage("Search for FigShare IDs")
 @ArgsName("List of search terms")
 final case class Search(@Recurse common: CommonOptions) extends Main
 
-@HelpMessage("Download figures from figtools into the current directory")
 @ArgsName("List of FigShare IDs")
 final case class Download(
   @Recurse common: CommonOptions,
@@ -31,7 +27,6 @@ final case class Download(
   outDir: String = "."
 ) extends Main
 
-@HelpMessage("Download *ALL* figures from figtools into the current directory.")
 final case class DownloadAll(
   @Recurse common: CommonOptions,
   @HelpMessage("Output directory")
@@ -39,7 +34,6 @@ final case class DownloadAll(
   outDir: String = "."
 ) extends Main
 
-@HelpMessage("Recursively analyze and segment a directory full of publication images.")
 final case class Analyze(
   @HelpMessage("Resolution to use when exporting PDFs to images")
   @ValueDescription("DPI")
@@ -64,7 +58,15 @@ object FigTools extends CommandApp[Main] {
   override def helpAsked(): Nothing = {
     print(beforeCommandMessages.help)
     println(s"Available commands: ${commands.mkString(", ")}\n")
+    val commandDescriptions = Map(
+      "get"->"Get metadata for FigShare IDs",
+      "list"->"List FigShare IDs",
+      "search"->"Search for FigShare IDs",
+      "download"->"Download figures from figtools into the current directory",
+      "download-all"->"Download *ALL* figures from figtools into the current directory.",
+      "analyze"->"Recursively analyze and segment a directory full of publication images.")
     for (cmd <- commandsMessages.messages.map{_._1}) {
+      commandDescriptions.get(cmd).foreach(d=>println(s"Description: $d"))
       println(commandsMessages.messagesMap(cmd).helpMessage(beforeCommandMessages.progName, cmd))
     }
     exit(0)

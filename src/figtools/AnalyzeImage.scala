@@ -13,7 +13,7 @@ import collection.JavaConverters._
 import edu.stanford.nlp.util.logging.RedwoodConfiguration
 import figtools.CaptionSegmenter.CaptionGroup
 import figtools.ImageSegmenter.ImageSegment
-import ij.{IJ, ImageJ, WindowManager}
+import ij.{IJ, ImageJ, ImagePlus, WindowManager}
 import ij.io.Opener
 import net.sourceforge.tess4j.ITessAPI.TessPageIteratorLevel
 
@@ -23,6 +23,8 @@ import net.sourceforge.tess4j.{Tesseract, Word}
 import org.tsers.zeison.Zeison
 import ImageLog.log
 import ij.gui.Roi
+import ij.plugin.frame.RoiManager
+import ij.process.ImageProcessor
 
 import scala.collection.mutable
 
@@ -64,6 +66,8 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
       val resources = json.resources.toList
       for (resource <- resources) {
         breakable {
+          WindowManager.closeAllWindows()
+
           val name = resource.name.toStr
           val imageFile = datapackage.parent / name
           if (!imageFile.toString.matches("""(?i).*\.(png|jpe?g|tiff?|pdf)""")) {
@@ -97,6 +101,15 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
             logger.info(s"File $imageFile contains no images, skipping")
             break
           }
+
+          val captionGroups = CaptionSegmenter.segmentCaption(description_nohtml)
+          logger.info(s"captionGroups=${pp(captionGroups)}")
+          val hasCaptions = captionGroups.flatMap{cg=>cg.captions}.flatMap{cs=>cs.label}.toSet
+          if (hasCaptions.size <= 1) {
+            logger.warn(s"File $imageFile only has a single caption, no need to segment the image.")
+            break
+          }
+
           val imageFileName =  imageFiles.head.toString
           IJ.redirectErrorMessages(true)
           logger.info(s"Opening image file $imageFileName")
@@ -106,14 +119,6 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
             break
           }
           log(imp, "[FigTools] original image")
-
-          val captionGroups = CaptionSegmenter.segmentCaption(description_nohtml)
-          logger.info(s"captionGroups=${pp(captionGroups)}")
-          val hasCaptions = captionGroups.flatMap{cg=>cg.captions}.flatMap{cs=>cs.label}.toSet
-          if (hasCaptions.size <= 1) {
-            logger.warn(s"File $imageFile only has a single caption, no need to segment the image.")
-            break
-          }
 
           val foundCaptions = mutable.Set[String]()
           val segmentDescription = mutable.Map[ImageSegment, (CaptionGroup, Word)]()
@@ -129,10 +134,18 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
             // use tesseract OCR
             val instance = new Tesseract()
             val bi = cropped.getBufferedImage
+            //log(new ImagePlus(cropped.getTitle,bi), s"[FigTools] bufferedImage seg${i+1}")
             val words = instance.getWords(bi, TessPageIteratorLevel.RIL_WORD).asScala.
               sortBy(x=>(-(x.getBoundingBox.width * x.getBoundingBox.height), -x.getConfidence))
+            log(new ImagePlus(cropped.getTitle,bi),
+              s"[FigTools] Run tesseract OCR on seg${i+1} (segment only)",
+              words.map{w=>w.getText->new Roi(
+                w.getBoundingBox.x,
+                w.getBoundingBox.y,
+                w.getBoundingBox.width,
+                w.getBoundingBox.height)}: _*)
             logger.info(s"seg${i+1} words: ${pprint.apply(words, height=9999999)}")
-            log(imp, s"[FigTools] Run tesseract OCR on seg${i+1}",
+            log(imp, s"[FigTools] Run tesseract OCR on seg${i+1} (overview)",
               Seq(s"seg${i+1}"->segment.box.toRoi) ++
                 words.map{w=>
                   w.getText->new Roi(
@@ -154,7 +167,7 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
                   segmentDescription(segment) = (captionGroup, word)
                 }
               }
-              logger.info(s"Tesseract OCR text: (box: ${pp(box)}, confidence: $confidence)='$text'")
+              logger.info(s"Tesseract OCR seg${i+1} text: (box: ${pp((box.x, box.y, box.width, box.height))}, confidence: ${pp(confidence)}='${pp(text)}'")
             }
           }
 
@@ -175,6 +188,9 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
 
           // wait for user to close the image
           while (WindowManager.getWindowCount > 0) Thread.sleep(200)
+
+          // clean up ROI list
+          RoiManager.getRoiManager.reset()
 
           // collect garbage
           System.gc()

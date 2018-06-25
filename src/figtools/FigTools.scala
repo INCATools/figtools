@@ -61,13 +61,20 @@ object FigTools extends CommandApp[Main] {
   var edgeDetector: String = _
   var pdfExportResolution: Int = _
 
+  override def helpAsked(): Nothing = {
+    print(beforeCommandMessages.help)
+    println(s"Available commands: ${commands.mkString(", ")}\n")
+    for (cmd <- commandsMessages.messages.map{_._1}) {
+      println(commandsMessages.messagesMap(cmd).helpMessage(beforeCommandMessages.progName, cmd))
+    }
+    exit(0)
+  }
   override def main(args: Array[String]): Unit =
     commandParser.withHelp.detailedParse(args)(beforeCommandParser.withHelp) match {
       case Left(err) => error(err)
       case Right((WithHelp(usage, help, d), dArgs, optCmd)) =>
-        if (help) helpAsked()
+        if (help || optCmd.isEmpty) helpAsked()
         if (usage) usageAsked()
-        if (optCmd.isEmpty) helpAsked()
         d.fold( error, beforeCommand(_, dArgs) )
         optCmd.foreach {
           case Left(err) =>

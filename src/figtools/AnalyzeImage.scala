@@ -104,7 +104,10 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
 
           val captionGroups = CaptionSegmenter.segmentCaption(description_nohtml)
           logger.info(s"captionGroups=${pp(captionGroups)}")
-          val hasCaptions = captionGroups.flatMap{cg=>cg.captions}.flatMap{cs=>cs.label}.toSet
+          val hasCaptions = captionGroups.
+            flatMap{cg=>cg.captions}.
+            flatMap{cs=>cs.label}.
+            map{_.toUpperCase}.toSet
           if (hasCaptions.size <= 1) {
             logger.warn(s"File $imageFile only has a single caption, no need to segment the image.")
             break
@@ -121,7 +124,7 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
           log(imp, "[FigTools] original image")
 
           val foundCaptions = mutable.Set[String]()
-          val segmentDescription = mutable.Map[ImageSegment, (CaptionGroup, Word)]()
+          val segmentDescription = mutable.Map[ImageSegment, (String, Word, Int)]()
 
           val segments = ImageSegmenter.segment(imp)
           log(imp, "[FigTools] split into segments",
@@ -158,23 +161,25 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
               val confidence = word.getConfidence
               val text = word.getText
               val captionGroups = CaptionSegmenter.segmentCaption(text)
+              logger.info(s"Tesseract OCR seg${i+1} text: (box: ${pp((box.x, box.y, box.width, box.height))}, confidence: ${pp(confidence)}='${pp(text)}'")
               for {
                 captionGroup <- captionGroups
                 caption <- captionGroup.captions
                 label <- caption.label
               } {
-                if (hasCaptions.contains(label) && !foundCaptions.contains(label)) {
-                  segmentDescription(segment) = (captionGroup, word)
+                val ucLabel = label.toUpperCase
+                if (hasCaptions.contains(ucLabel) && !foundCaptions.contains(ucLabel)) {
+                  logger.info(s"Assigning label $label to segment seg${i+1}")
+                  segmentDescription(segment) = (ucLabel, word, i)
+                  foundCaptions += ucLabel
                 }
               }
-              logger.info(s"Tesseract OCR seg${i+1} text: (box: ${pp((box.x, box.y, box.width, box.height))}, confidence: ${pp(confidence)}='${pp(text)}'")
             }
           }
 
           // show
           val captionLabels = ArrayBuffer[(String,Roi)]()
-          for ((segment, (captionGroup, word)) <- segmentDescription) {
-            val label = captionGroup.captions.flatMap{c=>c.label}.distinct.sorted.mkString(" ")
+          for ((segment, (label, word, _)) <- segmentDescription) {
             val roi = segment.box.toRoi
             captionLabels += label->roi
             captionLabels += word.getText->new Roi(
@@ -185,6 +190,7 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
           }
           log(imp, "[FigTools] Show caption labels", captionLabels: _*)
           logger.info(s"captionGroups=${pp(captionGroups)}")
+          logger.info(s"segmentDescription=${pp(segmentDescription.map{case (s,(l,w,i))=>(s"seg${i+1}",l,w)})}")
 
           // wait for user to close the image
           while (WindowManager.getWindowCount > 0) Thread.sleep(200)

@@ -243,8 +243,8 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
                 val lastLabelIdx = captions.indexWhere(_ == lastLabel)
                 val missingCaptions =
                   (if (firstLabelIdx > 0 && lastLabelIdx > 0 && firstLabelIdx < lastLabelIdx)
-                    captions.span { _ != firstLabel }._2.span { _ != lastLabel }._1.tail
-                  else captions.span { _ != lastLabel }._2.span { _ != firstLabel }._1.tail).
+                    captions.span { _ != firstLabel }._2.span { _ != lastLabel }._1.drop(1)
+                  else captions.span { _ != lastLabel }._2.span { _ != firstLabel }._1.drop(1)).
                     filter { l => !foundCaptions.contains(l) }
 
                 segmentDescriptions ++ unlabeled.zipWithIndex.flatMap { case (ui, uii) =>

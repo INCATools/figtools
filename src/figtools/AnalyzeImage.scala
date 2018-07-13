@@ -184,6 +184,7 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
               }
             }
           }
+          logger.info(s"segmentDescriptions=${pp(segmentDescriptions)}")
 
           // 2. discover highest scoring layout order:
           //     lrtb tblr rltb tbrl lrbt btlr rlbt btrl
@@ -197,9 +198,9 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
             zip(captionGroups.
               flatMap { cg => cg.captions }.
               flatMap { cs => cs.index }).
-            sortBy { case (l, i) => i }.
+            sortBy { case (_, i) => i }.
             map { _._1 }
-          val scoredSegDescrs = (for {
+          val bestFixedSegDescrs = (for {
             (ordered, i) <- Seq(
               orderSegments(segments),
               orderSegments(segments.map { s => ImageSegment(s.imp,
@@ -274,12 +275,13 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
             }
             (updatedSegDescs, score)
           }).sortBy { -_._2 }.map { _._1 }.headOption.getOrElse(segmentDescriptions)
+          logger.info(s"bestFixedSegDescrs=${pp(bestFixedSegDescrs)}")
 
           // 4. merge remaining unlabeled subpanels to nearest existing subpanels
           @tailrec def mergeSegments(segments: Seq[(ImageSegmenter.Box[Int], Set[Int])])
           : Seq[(ImageSegmenter.Box[Int], Set[Int])] = {
             val unlabeled = segments.zipWithIndex.find { case ((_, ss), _) =>
-              ss.forall { si => scoredSegDescrs.getOrElse(si, Seq()).isEmpty }
+              ss.forall { si => bestFixedSegDescrs.getOrElse(si, Seq()).isEmpty }
             }
             unlabeled match {
               case Some(((box, ss), i)) =>
@@ -306,13 +308,14 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
             }
           }
           val mergedSegments = mergeSegments(segments.zipWithIndex.map { case (s, i) => (s.box, Set(i)) })
+          logger.info(s"mergedSegments=${pp(mergedSegments)}")
 
           // show
           val captionLabels = ArrayBuffer[(String, Roi)]()
           for {
             (box, ms) <- mergedSegments
             i <- ms
-            descs <- scoredSegDescrs.get(i)
+            descs <- bestFixedSegDescrs.get(i)
             desc <- descs
           } {
             val segment = segments(i)
@@ -329,7 +332,7 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
           log(imp, "[FigTools] Show caption labels", captionLabels: _*)
           logger.info(s"captionGroups=${pp(captionGroups)}")
           logger.info(s"segmentDescription=${
-            pp(scoredSegDescrs.map{case (_,d)=>
+            pp(bestFixedSegDescrs.map{case (_,d)=>
               d.map{d=>(s"seg${d.segIndex+1}",d.label,d.word)}.mkString("\n")
             })
           }")

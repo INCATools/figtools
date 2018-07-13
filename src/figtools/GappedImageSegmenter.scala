@@ -175,7 +175,7 @@ class GappedImageSegmenter extends ImageSegmenter {
       var nearest: Option[ImageSegment] = None
       var nearestDistance: Option[Double] = None
       for (seg <- segs) {
-        val distance = rectDistance(small, seg)
+        val distance = GappedImageSegmenter.rectDistance(small.box, seg.box)
         if (nearest.isEmpty || distance < nearestDistance.get) {
           nearest = Some(seg)
           nearestDistance = Some(distance)
@@ -207,25 +207,28 @@ class GappedImageSegmenter extends ImageSegmenter {
     log(imp2, "[GappedImageSegmenter] recover small components", recovered.map{s=>s.box.toRoi}: _*)
     recovered
   }
+}
 
-  def distance(x: Float, y: Float, x2: Float, y2: Float): Double = {
-    math.sqrt(math.pow(x2 - x, 2) + math.pow(y2 - y, 2))
+object GappedImageSegmenter {
+  def distance[T](x: T, y: T, x2: T, y2: T)(implicit num: Numeric[T]): Double = {
+    import num._
+    math.sqrt(((x2 - x)*(x2 - x) + (y2 - y) * (y2 - y)).toDouble)
   }
-
   // https://stackoverflow.com/questions/4978323/how-to-calculate-distance-between-two-rectangles-context-a-game-in-lua
-  def rectDistance(seg1: ImageSegment, seg2: ImageSegment): Double = {
-    val left = seg2.box.x2 < seg1.box.x
-    val right = seg1.box.x2 < seg2.box.x
-    val bottom = seg2.box.y2 < seg1.box.y
-    val top = seg1.box.y2 < seg2.box.y
-    if (top && left) distance(seg1.box.x, seg1.box.y2, seg2.box.x2, seg2.box.y)
-    else if (left && bottom) distance(seg1.box.x, seg1.box.y, seg2.box.x2, seg2.box.y2)
-    else if (bottom && right) distance(seg1.box.x2, seg1.box.y, seg2.box.x, seg2.box.y2)
-    else if (right && top) distance(seg1.box.x2, seg1.box.y2, seg2.box.x, seg2.box.y)
-    else if (left) seg1.box.x - seg2.box.x2
-    else if (right) seg2.box.x - seg1.box.x2
-    else if (bottom) seg1.box.y - seg2.box.y2
-    else if (top) seg2.box.y - seg1.box.y2
+  def rectDistance[T](box1: ImageSegmenter.Box[T], box2: ImageSegmenter.Box[T])(implicit num: Numeric[T]): Double = {
+    import num._
+    val left = box2.x2 < box1.x
+    val right = box1.x2 < box2.x
+    val bottom = box2.y2 < box1.y
+    val top = box1.y2 < box2.y
+    if (top && left) distance(box1.x, box1.y2, box2.x2, box2.y)
+    else if (left && bottom) distance(box1.x, box1.y, box2.x2, box2.y2)
+    else if (bottom && right) distance(box1.x2, box1.y, box2.x, box2.y2)
+    else if (right && top) distance(box1.x2, box1.y2, box2.x, box2.y)
+    else if (left) (box1.x - box2.x2).toDouble
+    else if (right) (box2.x - box1.x2).toDouble
+    else if (bottom) (box1.y - box2.y2).toDouble
+    else if (top) (box2.y - box1.y2).toDouble
     // rectangles intersect
     else 0
   }

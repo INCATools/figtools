@@ -8,6 +8,8 @@ import scala.collection.mutable.ArrayBuffer
 import scala.util.matching.Regex
 import com.typesafe.scalalogging.Logger
 
+import scala.collection.immutable
+
 object CaptionSegmenter {
   val logger = Logger("CaptionSegmenter")
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
@@ -121,6 +123,7 @@ object CaptionSegmenter {
     logger.debug(s"series=${pp(series)}")
 
     // Try to determine if the description precedes or follows the label caption
+    // TODO: improve this?
     val findAfter = labels.lastOption.flatMap(l=>"""^\s*$""".r.findFirstMatchIn(caption.slice(l.regexMatch.end, caption.length))).isEmpty
 
     val seenLabels = mutable.Set[Label]()
@@ -169,7 +172,7 @@ object CaptionSegmenter {
       }
     }
     else {
-      series ++= List(start, stop)
+      series ++= immutable.List(start, stop)
     }
     series
   }
@@ -203,7 +206,7 @@ object CaptionSegmenter {
 
   object RomanNumberConverter {
     val toArabic = Map('I'->1, 'V'->5, 'X'->10, 'L'->50, 'C'->100, 'D'->500, 'M'->1000)
-    val digits = List(
+    val digits = immutable.List(
       ("M", 1000),("CM", 900), ("D", 500), ("CD", 400), ("C", 100), ("XC", 90),
       ("L", 50), ("XL",40), ("X", 10), ("IX", 9), ("V", 5), ("IV", 4), ("I", 1))
 
@@ -229,7 +232,7 @@ object CaptionSegmenter {
       convert(sb.tail, nextDecimal, nextDecimal)
     }
 
-    def toUpper(index: Int, digits: List[(String,Int)] = RomanNumberConverter.digits): String = {
+    def toUpper(index: Int, digits: immutable.List[(String,Int)] = RomanNumberConverter.digits): String = {
       digits match {
         case Nil => ""
         case h :: t => h._1 * (index / h._2) + toUpper(index % h._2, t)

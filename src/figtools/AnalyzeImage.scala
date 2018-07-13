@@ -11,22 +11,25 @@ import edu.stanford.nlp.pipeline.{Annotation, StanfordCoreNLP}
 import sys.process._
 import collection.JavaConverters._
 import edu.stanford.nlp.util.logging.RedwoodConfiguration
-import figtools.CaptionSegmenter.CaptionGroup
 import figtools.ImageSegmenter.ImageSegment
 import ij.{IJ, ImageJ, ImagePlus, WindowManager}
 import ij.io.Opener
 import net.sourceforge.tess4j.ITessAPI.TessPageIteratorLevel
 
 import util.control.Breaks._
+import java.util
+
 import scala.collection.mutable.ArrayBuffer
 import net.sourceforge.tess4j.{Tesseract, Word}
 import org.tsers.zeison.Zeison
 import ImageLog.log
 import ij.gui.Roi
 import ij.plugin.frame.RoiManager
-import ij.process.ImageProcessor
 
 import scala.collection.mutable
+import archery.{Box, Entry, RTree}
+
+import scala.annotation.tailrec
 
 class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 300) {
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
@@ -123,8 +126,8 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
           }
           log(imp, "[FigTools] original image")
 
-          val foundCaptions = mutable.Set[String]()
-          val segmentDescription = mutable.Map[ImageSegment, (String, Word, Int)]()
+          case class SegmentDescription(label: String, word: Option[Word], segIndex: Int)
+          val segmentDescriptions = mutable.Map[Int, ArrayBuffer[SegmentDescription]]()
 
           val segments = ImageSegmenter.segment(imp)
           log(imp, "[FigTools] split into segments",
@@ -168,29 +171,151 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
                 label <- caption.label
               } {
                 val ucLabel = label.toUpperCase
-                if (hasCaptions.contains(ucLabel) && !foundCaptions.contains(ucLabel)) {
+                if (hasCaptions.contains(ucLabel)) {
                   logger.info(s"Assigning label $label to segment seg${i+1}")
-                  segmentDescription(segment) = (ucLabel, word, i)
-                  foundCaptions += ucLabel
+                  segmentDescriptions.getOrElseUpdate(i, ArrayBuffer()) +=
+                    SegmentDescription(ucLabel, Some(word), i)
                 }
               }
             }
           }
 
+          // 2. discover highest scoring layout order:
+          //     lrtb tblr rltb tbrl lrbt btlr rlbt btrl
+          // TODO: 8 zigzag patterns
+          val xmax = segments.map{_.box.x2}.max
+          val ymax = segments.map{_.box.y2}.max
+          val orderedCaptions = captionGroups.
+            flatMap{cg=>cg.captions}.
+            flatMap{cs=>cs.label}.
+            map{_.toUpperCase}.
+            zip(captionGroups.
+              flatMap{cg=>cg.captions}.
+              flatMap{cs=>cs.index}).
+            sortBy{case (l,i)=>i}.
+            map{_._1}
+          val scoredSegDescrs = (for {
+            (ordered, i) <- Seq(
+              orderSegments(segments),
+              orderSegments(segments.map{s=>ImageSegment(s.imp,
+                ImageSegmenter.Box(s.box.y, s.box.x, s.box.y2, s.box.x2))}),
+              orderSegments(segments.map{s=>ImageSegment(s.imp,
+                ImageSegmenter.Box(xmax-s.box.x, s.box.y, xmax-s.box.x2, s.box.y2))}),
+              orderSegments(segments.map{s=>ImageSegment(s.imp,
+                ImageSegmenter.Box(s.box.y, xmax-s.box.x, s.box.y2, xmax-s.box.x2))}),
+              orderSegments(segments.map{s=>ImageSegment(s.imp,
+                ImageSegmenter.Box(s.box.x, ymax-s.box.y, s.box.x2, ymax-s.box.y2))}),
+              orderSegments(segments.map{s=>ImageSegment(s.imp,
+                ImageSegmenter.Box(ymax-s.box.y, s.box.x, ymax-s.box.y2, s.box.x2))}),
+              orderSegments(segments.map{s=>ImageSegment(s.imp,
+                ImageSegmenter.Box(xmax-s.box.x, ymax-s.box.y, xmax-s.box.x2, ymax-s.box.y2))}),
+              orderSegments(segments.map{s=>ImageSegment(s.imp,
+                ImageSegmenter.Box(ymax-s.box.y, xmax-s.box.x, ymax-s.box.y2, xmax-s.box.x2))})).zipWithIndex
+          } yield {
+            // 3. add labels to unlabeled subpanels that need them
+            @tailrec def
+            findCaptions(captions: Seq[String],
+                         ordered: Seq[Int],
+                         segmentDescriptions: collection.Map[Int, Seq[SegmentDescription]]):
+            collection.Map[Int, Seq[SegmentDescription]] =
+            {
+              val (firstLabeled, rest) = ordered.
+                span{i=>segmentDescriptions.getOrElse(i, Seq()).nonEmpty}
+              val (unlabeled, rest2) = rest.
+                span{i=>segmentDescriptions.getOrElse(i, Seq()).isEmpty}
+              val (lastLabeled, _) = rest2.
+                span{i=>segmentDescriptions.getOrElse(i, Seq()).nonEmpty}
+              val updatedSegDescrs = if (unlabeled.nonEmpty) {
+                val firstLabel = firstLabeled.lastOption.
+                  map{i=>segmentDescriptions(i).map{s=>s.label}.max}.getOrElse(captions.head)
+                val lastLabel = lastLabeled.headOption.
+                  map{i=>segmentDescriptions(i).map{s=>s.label}.min}.getOrElse(captions.last)
+
+                val foundCaptions = segmentDescriptions.values.flatten.map{_.label}.toSet
+                val firstLabelIdx = captions.indexWhere(_ == firstLabel)
+                val lastLabelIdx = captions.indexWhere(_ == lastLabel)
+                val missingCaptions =
+                  (if (firstLabelIdx > 0 && lastLabelIdx > 0 && firstLabelIdx < lastLabelIdx)
+                    captions.span{_ != firstLabel}._2.span{_ != lastLabel}._1.tail
+                  else captions.span{_ != lastLabel}._2.span{_ != firstLabel}._1.tail).
+                      filter{l=> !foundCaptions.contains(l)}
+
+                segmentDescriptions ++ unlabeled.zipWithIndex.flatMap{case (i,ii)=>
+                  val mc = missingCaptions.slice(
+                    (ii.toDouble / unlabeled.size.toDouble * missingCaptions.size.toDouble).toInt,
+                    ((ii+1).toDouble / unlabeled.size.toDouble * missingCaptions.size.toDouble).toInt)
+                  if (mc.nonEmpty)
+                    Seq(i->mc.map{c=>SegmentDescription(c, None, i)})
+                  else Seq()
+                }.toMap
+              } else segmentDescriptions
+              if (rest2.nonEmpty) findCaptions(captions, rest2, updatedSegDescrs) else updatedSegDescrs
+            }
+            val updatedSegDescs = findCaptions(orderedCaptions, ordered, segmentDescriptions)
+
+            val captionOrder = orderedCaptions.zipWithIndex.toMap
+            val segDescrOrder = updatedSegDescs.toSeq.
+              sortBy{_._1}.
+              map{_._2}.
+              flatten.
+              map{sd=>captionOrder(sd.label)}
+            var score = -i
+            for ((sdo, i) <- segDescrOrder.zipWithIndex) {
+              if (i < segDescrOrder.length-1) {
+                val next = segDescrOrder(i+1)
+                if (next-sdo == 1) score += 1000
+                else if (next-sdo > 0) score += 100
+              }
+            }
+            (updatedSegDescs, score)
+          }).sortBy{-_._2}.map{_._1}.headOption.getOrElse(segmentDescriptions)
+
+          // 4. join remaining unlabeled subpanels to nearest existing subpanels
+          var unlabeled = mutable.Set(scoredSegDescrs.filter{_._2.isEmpty}.keys.toSeq: _*)
+          while (unlabeled.nonEmpty) {
+            val newUnlabeled = mutable.Set(unlabeled.toSeq: _*)
+            for (u <- unlabeled) {
+              val segment = segments(u)
+              for ((nearest,i) <- segments.zipWithIndex.
+                filter{case (_,i)=> i != unlabeled}.
+                sortBy{case (s,_)=>GappedImageSegmenter.rectDistance(segment.box, s.box)}.
+                headOption)
+              {
+                val ssd = scoredSegDescrs.getOrElse(i, Seq())
+                if (ssd.nonEmpty) {
+                  newUnlabeled -= u
+                }
+                else {
+
+                }
+              }
+            }
+            unlabeled = newUnlabeled
+          }
+
           // show
           val captionLabels = ArrayBuffer[(String,Roi)]()
-          for ((segment, (label, word, _)) <- segmentDescription) {
-            val roi = segment.box.toRoi
-            captionLabels += label->roi
-            captionLabels += word.getText->new Roi(
-              word.getBoundingBox.x+segment.box.x,
-              word.getBoundingBox.y+segment.box.y,
-              word.getBoundingBox.width,
-              word.getBoundingBox.height)
+          for ((i, descs) <- scoredSegDescrs) {
+            val segment = segments(i)
+            for (desc <- descs) {
+              val roi = segment.box.toRoi
+              captionLabels += desc.label->roi
+              for {w <- desc.word} {
+                captionLabels += w.getText->new Roi(
+                  w.getBoundingBox.x+segment.box.x,
+                  w.getBoundingBox.y+segment.box.y,
+                  w.getBoundingBox.width,
+                  w.getBoundingBox.height)
+              }
+            }
           }
           log(imp, "[FigTools] Show caption labels", captionLabels: _*)
           logger.info(s"captionGroups=${pp(captionGroups)}")
-          logger.info(s"segmentDescription=${pp(segmentDescription.map{case (s,(l,w,i))=>(s"seg${i+1}",l,w)})}")
+          logger.info(s"segmentDescription=${
+            pp(scoredSegDescrs.map{case (_,d)=>
+              d.map{d=>(s"seg${d.segIndex+1}",d.label,d.word)}.mkString("\n")
+            })
+          }")
 
           // wait for user to close the image
           while (WindowManager.getWindowCount > 0) Thread.sleep(200)
@@ -205,4 +330,42 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
     }
   }
 
+  // 1. group segments into rows/columns
+  def orderSegments(segments: Seq[ImageSegment]): Seq[Int] = {
+    val rtree = RTree(segments.zipWithIndex.map { case (s, i) =>
+      Entry(Box(s.box.x, s.box.y, s.box.x2, s.box.y2), (s, i))
+    }: _*)
+    val ordered = new util.LinkedHashSet[Int]().asScala
+    while (ordered.size < segments.size) {
+      for (first <- segments.zipWithIndex.
+        filter { s => !ordered.contains(s._2) }.
+        sortBy { s => (s._1.box.y, s._1.box.x) }.headOption)
+      {
+        ordered += first._2
+        for {
+          next <- rtree.search(Box(
+            first._1.box.x2,
+            (first._1.box.y + 0.1 * (first._1.box.y2 - first._1.box.y + 1)).asInstanceOf[Float],
+            first._1.box.x2,
+            (first._1.box.y2 - 0.1 * (first._1.box.y2 - first._1.box.y + 1)).asInstanceOf[Float])).
+          sortWith { case (a, b) =>
+            GappedImageSegmenter.rectDistance(
+              ImageSegmenter.Box(
+                a.value._1.box.x,
+                a.value._1.box.y,
+                a.value._1.box.x2,
+                a.value._1.box.y2),
+              ImageSegmenter.Box(
+                b.value._1.box.x,
+                b.value._1.box.y,
+                b.value._1.box.x2,
+                b.value._1.box.y2)) < 0
+            }.headOption}
+        {
+          ordered += next.value._2
+        }
+      }
+    }
+    ordered.toSeq
+  }
 }

@@ -13,7 +13,7 @@ import ImageLog.log
 import ij.gui.Roi
 
 class GappedImageSegmenter extends ImageSegmenter {
-  val logger = Logger("GappedImageSegmenter")
+  val logger = Logger(getClass.getSimpleName)
   val BinarizeThreshold = 0.95
   val ParticleThreshold = 20.0
 

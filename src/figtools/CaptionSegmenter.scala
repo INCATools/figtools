@@ -11,7 +11,7 @@ import com.typesafe.scalalogging.Logger
 import scala.collection.immutable
 
 object CaptionSegmenter {
-  val logger = Logger("CaptionSegmenter")
+  val logger = Logger(getClass.getSimpleName)
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
 
   def segmentCaption(caption: String): Seq[CaptionGroup] = {

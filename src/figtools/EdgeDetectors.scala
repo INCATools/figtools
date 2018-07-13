@@ -8,7 +8,7 @@ import ImageLog.log
 import com.typesafe.scalalogging.Logger
 
 object EdgeDetectors {
-  val logger = Logger("EdgeDetectors")
+  val logger = Logger(getClass.getSimpleName)
 
   trait EdgeDetector {
     def run(imp: ImagePlus): ImagePlus

@@ -33,7 +33,7 @@ import scala.annotation.tailrec
 
 class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 300) {
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
-  val logger = Logger("AnalyzeImage")
+  val logger = Logger(getClass.getSimpleName)
 
   def analyze() {
     if (!FigTools.edgeDetectors.contains(edgeDetector)) {

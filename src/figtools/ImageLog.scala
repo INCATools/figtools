@@ -4,14 +4,13 @@ import java.util.Scanner
 
 import com.typesafe.scalalogging.Logger
 import ij.gui.Roi
-import ij.io.FileSaver
 import ij.plugin.frame.RoiManager
 import ij.process.Blitter
 import ij.{IJ, ImagePlus, WindowManager}
 import javax.swing.SwingUtilities
 
 object ImageLog {
-  val logger = Logger("FigTools")
+  val logger = Logger(getClass.getSimpleName)
   def log(imp_ : ImagePlus, description: String, rois: Any*): Unit = {
     logger.info(s"${imp_.getTitle}: $description: Rois: ${pprint.apply(rois, height=50)}")
     SwingUtilities.invokeAndWait(()=>{

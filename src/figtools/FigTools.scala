@@ -48,7 +48,7 @@ object FigTools extends CommandApp[Main] {
   override def appVersion: String = "0.1.0"
   override def progName: String = "figtools"
 
-  val logger = Logger("FigTools")
+  val logger = Logger(getClass.getSimpleName)
   val edgeDetectors = Map(
     "susan"->EdgeDetectors.Susan,
     "imagej"->EdgeDetectors.ImageJ)

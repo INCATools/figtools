@@ -257,7 +257,6 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
               } else segmentDescriptions
               if (rest2.nonEmpty) findCaptions(captions, rest2, updatedSegDescrs) else updatedSegDescrs
             }
-
             val updatedSegDescs = findCaptions(orderedCaptions, ordered, segmentDescriptions)
 
             val captionOrder = orderedCaptions.zipWithIndex.toMap

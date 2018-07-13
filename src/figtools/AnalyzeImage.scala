@@ -126,13 +126,13 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
             logger.warn(s"Could not open image file $imageFile, skipping")
             break
           }
-          log(imp, "[FigTools] original image")
+          log(imp, "[AnalyzeImage] original image")
 
           case class SegmentDescription(label: String, word: Option[Word], segIndex: Int)
           val segmentDescriptions = mutable.Map[Int, ArrayBuffer[SegmentDescription]]()
 
           val segments = ImageSegmenter.segment(imp)
-          log(imp, "[FigTools] split into segments",
+          log(imp, "[AnalyzeImage] split into segments",
             segments.zipWithIndex.map { case (s, i) => s"seg${i + 1}" -> s.box.toRoi }: _*)
           for ((segment, i) <- segments.zipWithIndex) {
             val cropped = imp.duplicate()
@@ -146,7 +146,7 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
             val words = instance.getWords(bi, TessPageIteratorLevel.RIL_WORD).asScala.
               sortBy(x => (-(x.getBoundingBox.width * x.getBoundingBox.height), -x.getConfidence))
             log(new ImagePlus(cropped.getTitle, bi),
-              s"[FigTools] Run tesseract OCR on seg${i + 1} (segment only)",
+              s"[AnalyzeImage] Run tesseract OCR on seg${i + 1} (segment only)",
               words.map { w =>
                 w.getText -> new Roi(
                   w.getBoundingBox.x,

@@ -16,27 +16,29 @@ object ImageLog {
     SwingUtilities.invokeAndWait(()=>{
       val imp = imp_.duplicate()
       // get currently displayed image
-      val currentImp = Option(WindowManager.getCurrentImage).getOrElse({
-        val i = IJ.createImage(imp.getTitle, "RGB white", imp.getWidth, imp.getHeight, 1)
-        i.show()
-        i
-      })
-      // resize canvas if necessary
-      if (imp.getWidth > currentImp.getWidth || imp.getHeight > currentImp.getHeight) {
-        val width = math.max(imp.getWidth, currentImp.getWidth)
-        val height = math.max(imp.getHeight, currentImp.getHeight)
-        IJ.run(currentImp, "Canvas Size...", s"width=$width height=$height position=Top-Left")
+      val currentImp = Option(WindowManager.getCurrentImage) match {
+        case Some(ci) =>
+          // resize canvas if necessary
+          if (imp.getWidth > ci.getWidth || imp.getHeight > ci.getHeight) {
+            val width = math.max(imp.getWidth, ci.getWidth)
+            val height = math.max(imp.getHeight, ci.getHeight)
+            IJ.run(ci, "Canvas Size...", s"width=$width height=$height position=Top-Left")
+          }
+          // make a new slice
+          ci.setSlice(ci.getNSlices)
+          IJ.run(ci, "Add Slice", "")
+          ci.setSlice(ci.getNSlices)
+          // copy bits
+          ci.getProcessor.copyBits(imp.getProcessor, 0, 0, Blitter.COPY)
+          // set the slice label
+          ci.getImageStack.setSliceLabel(description, ci.getNSlices)
+          ci
+        case None =>
+          // set the slice label
+          imp.getImageStack.setSliceLabel(description, imp.getNSlices)
+          imp.show()
+          imp
       }
-      // make a new slice
-      currentImp.setSlice(currentImp.getNSlices)
-      IJ.run(currentImp, "Add Slice", "")
-      val sliceNum = currentImp.getNSlices
-      currentImp.setSlice(sliceNum)
-      // copy bits
-      currentImp.getProcessor.copyBits(imp.getProcessor, 0, 0, Blitter.COPY)
-      // set the slice label
-      currentImp.getImageStack.setSliceLabel(description, sliceNum)
-
       // add ROIs to new slice
       if (rois.nonEmpty) {
         // get ROI manager and update settings
@@ -45,7 +47,7 @@ object ImageLog {
         rm.runCommand("Centered", "false")
         rm.runCommand("UseNames", "true")
 
-        currentImp.setSlice(sliceNum)
+        currentImp.setSlice(currentImp.getNSlices)
         for ((r,i) <- rois.zipWithIndex) {
           r match {
             case (label: String,roi: Roi) =>

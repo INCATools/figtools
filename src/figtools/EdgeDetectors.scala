@@ -19,10 +19,10 @@ object EdgeDetectors {
       logger.info("running ImageJ edge detector, this may take some time...")
       val edgeImage = imp.duplicate()
       IJ.run(edgeImage, "Find Edges", "")
-      log(edgeImage, "[ImageJ] edge image")
+      log(edgeImage, "[EdgeDetectors: ImageJ] edge image")
       // binarize the edge image
       IJ.run(edgeImage, "Make Binary", "")
-      log(edgeImage, "[ImageJ] binarized edge image")
+      log(edgeImage, "[EdgeDetectors: ImageJ] binarized edge image")
       edgeImage
     }
   }
@@ -37,10 +37,10 @@ object EdgeDetectors {
       val edgeImage = new ImagePlus(
         imp.getTitle,
         new FloatProcessor(susan.pixels).convertToByteProcessor())
-      log(edgeImage, "[Susan] edge image")
+      log(edgeImage, "[EdgeDetectors: Susan] edge image")
       // binarize the edge image
       IJ.run(edgeImage, "Make Binary", "")
-      log(edgeImage, "[Susan] binarized edge image")
+      log(edgeImage, "[EdgeDetectors: Susan] binarized edge image")
       edgeImage
     }
   }

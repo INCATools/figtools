@@ -291,9 +291,9 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
                 nearest match {
                   case Some(((nbox, nss), ni)) =>
                     mergeSegments(
-                      segments.zipWithIndex.filter { case (_, mi) => mi != i && mi != ni }.map {
-                        _._1
-                      } ++
+                      segments.zipWithIndex.
+                        filter { case (_, mi) => mi != i && mi != ni }.
+                        map { _._1 } ++
                         Seq((
                           ImageSegmenter.Box(
                             math.min(box.x, nbox.x),

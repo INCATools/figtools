@@ -274,11 +274,7 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
               }
             }
             (updatedSegDescs, score)
-          }).sortBy {
-            -_._2
-          }.map {
-            _._1
-          }.headOption.getOrElse(segmentDescriptions)
+          }).sortBy { -_._2 }.map { _._1 }.headOption.getOrElse(segmentDescriptions)
 
           // 4. merge remaining unlabeled subpanels to nearest existing subpanels
           @tailrec def mergeSegments(segments: Seq[(ImageSegmenter.Box[Int], Set[Int])])
@@ -310,7 +306,6 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
               case None => segments
             }
           }
-
           val mergedSegments = mergeSegments(segments.zipWithIndex.map { case (s, i) => (s.box, Set(i)) })
 
           // show

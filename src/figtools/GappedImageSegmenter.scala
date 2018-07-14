@@ -1,6 +1,6 @@
 package figtools
 
-import archery.{Box, Entry, RTree}
+import archery.{Entry, RTree}
 import com.typesafe.scalalogging.Logger
 import figtools.ImageSegmenter.ImageSegment
 import ij.ImagePlus
@@ -12,15 +12,22 @@ import scala.collection.mutable.ArrayBuffer
 import ImageLog.log
 import ij.gui.Roi
 
+import scala.annotation.tailrec
+
 class GappedImageSegmenter extends ImageSegmenter {
   val logger = Logger(getClass.getSimpleName)
   val BinarizeThreshold = 0.95
   val ParticleThreshold = 20.0
+  val largeParticleFilter = 0.9
+  val MergeThreshold = 0.1
+  val BboxThreshold = 0.2
+  val NewBoxPctCutoff = 0.2
+  val SegmentAreaCutoff = 0.5
+  val ContentDiff = 0.3
 
   override def segment(imp: ImagePlus): Seq[ImageSegment] = {
     val imp2 = imp.duplicate()
     //log(imp2, "[GappedImageSegmenter] original image")
-    val segments = ArrayBuffer[ImageSegment]()
 
     // binarize the image using a threshold of 0.95
     val threshold = (255.0 * BinarizeThreshold).toInt
@@ -51,161 +58,179 @@ class GappedImageSegmenter extends ImageSegmenter {
 
     // Get the objects and iterate through them
     var segs = ArrayBuffer[ImageSegment]()
-    val boxes = ArrayBuffer[Roi]()
-    val rtree = RTree((0 until rt.getCounter).flatMap{i=>
+    (0 until rt.getCounter).foreach{i=>
       val bx = rt.getValue("BX", i).toInt
       val by = rt.getValue("BY", i).toInt
       val width = rt.getValue("Width", i).toInt
       val height = rt.getValue("Height", i).toInt
 
-      if (width > imp2.getWidth / ParticleThreshold &&
-          height > imp2.getHeight / ParticleThreshold)
+      if (width > imp2.getWidth.toDouble / ParticleThreshold &&
+          height > imp2.getHeight.toDouble / ParticleThreshold &&
+          (width*height).toDouble / (imp2.getWidth*imp2.getHeight).toDouble < largeParticleFilter)
       {
         val box = ImageSegmenter.Box(bx, by, bx+width, by+height)
-        boxes += box.toRoi
-        segs += ImageSegment(imp, box)
-        Some(Entry(Box(box.x, box.y, box.x2, box.y2), box))
+        val segment = ImageSegment(imp, box)
+        segs += segment
       }
-      else None
-    }: _*)
-    log(imp2, "[GappedImageSegmenter] RTree boxes", boxes: _*)
-    // merge overlapping segments
-    var loop = true
-    while (loop) {
-      loop = false
-      val outsegs = ArrayBuffer[ImageSegment]()
-      for (seg <- segs) {
-        for (t <- rtree.search(seg.box.toArchery)) {
-          if (t.value != seg.box) {
-            val intersectionBox = Box(
-              math.max(seg.box.x, t.value.x),
-              math.max(seg.box.y, t.value.y),
-              math.min(seg.box.x, t.value.x),
-              math.min(seg.box.y, t.value.y))
-            val intersectionArea =
-              (intersectionBox.x2 - intersectionBox.x) *
-              (intersectionBox.y2 - intersectionBox.y)
-            val minBoxArea =
-              (seg.box.x2 - seg.box.x) *
-              (seg.box.y2 - seg.box.y)
-            val MergeThreshold = 0.1
-            if (intersectionArea / minBoxArea > MergeThreshold) {
-              loop = true
-              val combinedBox = ImageSegmenter.Box(
-                math.min(seg.box.x, t.value.x),
-                math.min(seg.box.y, t.value.y),
-                math.max(seg.box.x, t.value.x),
-                math.max(seg.box.y, t.value.y))
-              outsegs += ImageSegment(seg.imp, combinedBox)
-            }
-          }
-        }
-      }
-      segs = outsegs
     }
-    log(imp2, "[GappedImageSegmenter] merge overlapping segments", segs.map{s=>s.box.toRoi}: _*)
+    log(imp2,
+      s"[GappedImageSegmenter] filter boxes smaller than (${(imp2.getWidth.toDouble / ParticleThreshold).toInt},${(imp2.getHeight.toDouble / ParticleThreshold).toInt})",
+      segs.map{_.box.toRoi}: _*)
+
+    @tailrec def mergeOverlappingSegs(segs: Seq[ImageSegment]): Seq[ImageSegment] = {
+      val rtree = RTree(segs.map{s=>Entry(s.box.toArchery, s)}: _*)
+      val overlapping = segs.flatMap { o =>
+        val overlaps = rtree.searchIntersection(o.box.toArchery).filter { overlaps =>
+          val intersectionBox = ImageSegmenter.Box(
+            math.max(o.box.x, overlaps.value.box.x),
+            math.max(o.box.y, overlaps.value.box.y),
+            math.min(o.box.x2, overlaps.value.box.x2),
+            math.min(o.box.y2, overlaps.value.box.y2))
+          val intersectionArea =
+            (intersectionBox.x2 - intersectionBox.x) *
+              (intersectionBox.y2 - intersectionBox.y)
+          val minBoxArea = math.min(
+            (o.box.x2 - o.box.x) * (o.box.y2 - o.box.y),
+            (overlaps.value.box.x2 - overlaps.value.box.x) * (overlaps.value.box.y2 - overlaps.value.box.y))
+          intersectionArea.toDouble / minBoxArea.toDouble > MergeThreshold
+        }.filter{_.value != o}
+        if (overlaps.nonEmpty) Seq((o,overlaps.head.value)) else Seq()
+      }.headOption
+
+      overlapping match {
+        case Some((o,overlaps)) =>
+          mergeOverlappingSegs(
+            segs.filter { s => overlaps != s && o != s } ++
+              Seq(ImageSegment(
+                o.imp,
+                ImageSegmenter.Box(
+                  math.min(o.box.x, overlaps.box.x),
+                  math.min(o.box.y, overlaps.box.y),
+                  math.max(o.box.x2, overlaps.box.x2),
+                  math.max(o.box.y2, overlaps.box.y2)))))
+        case None => segs
+      }
+    }
+    val mergedSegs = mergeOverlappingSegs(segs)
+    segs = ArrayBuffer(mergedSegs: _*)
+    logger.info(s"mergedSegs=${pprint.apply(mergedSegs, height=1000)}")
+    log(imp2, "[GappedImageSegmenter] merge overlapping segments", mergedSegs.map{_.box.toRoi}: _*)
+
     // temporarily eliminate small components
-    val BboxThreshold = 0.2
     val (larger, smaller) = segs.sortBy({seg=>
         (seg.box.x2 - seg.box.x) *
         (seg.box.y2 - seg.box.y)
-      }).reverse.headOption match
+      }).lastOption match
     {
       case Some(largest) =>
         val larger = segs.filter(seg=>
-          seg.box.x2 - seg.box.x /
-            largest.box.x2 - largest.box.x
-            > BboxThreshold &&
-          seg.box.y2 - seg.box.y /
-            largest.box.y2 - largest.box.y
-            > BboxThreshold)
+          (seg.box.x2 - seg.box.x).toDouble / (largest.box.x2 - largest.box.x).toDouble > BboxThreshold &&
+          (seg.box.y2 - seg.box.y).toDouble / (largest.box.y2 - largest.box.y).toDouble > BboxThreshold)
         val smaller = segs.filter(seg=>
-          seg.box.x2 - seg.box.x /
-            largest.box.x2 - largest.box.x
-            <= BboxThreshold &&
-            seg.box.y2 - seg.box.y /
-              largest.box.y2 - largest.box.y
-              <= BboxThreshold)
+          !((seg.box.x2 - seg.box.x).toDouble / (largest.box.x2 - largest.box.x).toDouble > BboxThreshold &&
+            (seg.box.y2 - seg.box.y).toDouble / (largest.box.y2 - largest.box.y).toDouble > BboxThreshold))
         (larger, smaller)
       case None =>
         logger.warn(s"No largest bounding box found!")
         (segs, Seq())
     }
     log(imp2, "[GappedImageSegmenter] temporarily eliminate small components", larger.map{s=>s.box.toRoi}: _*)
-    // recover missing panels
-    for {
-      maxWidthEntry <- segs.sortBy(_.box.width).reverse.headOption
-      maxWidth = maxWidthEntry.box.width
-      maxHeightEntry <- segs.sortBy(_.box.height).reverse.headOption
-      maxHeight = maxHeightEntry.box.height
-    } {
-      segs = larger.flatMap{seg=>
-        val up = ImageSegmenter.Box(seg.box.x,seg.box.y-seg.box.height,seg.box.x2,seg.box.y-1)
-        val down = ImageSegmenter.Box(seg.box.x,seg.box.y+seg.box.height+1,seg.box.x2,seg.box.y2+seg.box.height)
-        val left = ImageSegmenter.Box(seg.box.x-seg.box.width,seg.box.y,seg.box.x-1,seg.box.y2)
-        val right = ImageSegmenter.Box(seg.box.x+seg.box.width+1,seg.box.y,seg.box.x2+seg.box.width,seg.box.y2)
 
-        (if (seg.box.height < seg.box.y && rtree.search(up.toArchery).isEmpty)
-          Seq(ImageSegment(imp, up))
-        else Seq.empty) ++
-          (if (seg.box.y+seg.box.height*2 < maxHeight && rtree.search(down.toArchery).isEmpty)
-            Seq(ImageSegment(imp, down))
-          else Seq.empty) ++
-          (if (seg.box.width < seg.box.x && rtree.search(left.toArchery).isEmpty)
-            Seq(ImageSegment(imp, left))
-          else Seq.empty) ++
-          (if (seg.box.x+seg.box.width*2 < maxWidth && rtree.search(right.toArchery).isEmpty)
-            Seq(ImageSegment(imp, right))
-          else Seq.empty)
-      }
+    // recover missing panels
+    val imp3 = imp2.duplicate()
+    val largerRtree = RTree(larger.map{s=>Entry(s.box.toArchery, s)}: _*)
+    val recoverMissing = larger.flatMap{seg =>
+      imp3.setRoi(seg.box.toRoi)
+      val segArea = ((seg.box.x2 - seg.box.x) * (seg.box.y2 - seg.box.y)).toDouble
+      val segHisto = imp3.getProcessor.getHistogram
+      val segContent = segHisto(0).toDouble / segArea
+      logger.info(s"segContent=$segContent")
+
+      val up = ImageSegmenter.Box(seg.box.x,seg.box.y-seg.box.height,seg.box.x2,seg.box.y-1)
+      imp3.setRoi(up.toRoi)
+      val upHisto = imp3.getProcessor.getHistogram
+      val upContent = upHisto(0).toDouble / segArea
+      logger.info(s"upContent=$upContent")
+
+      val down = ImageSegmenter.Box(seg.box.x,seg.box.y+seg.box.height+1,seg.box.x2,seg.box.y2+seg.box.height)
+      imp3.setRoi(down.toRoi)
+      val downHisto = imp3.getProcessor.getHistogram
+      val downContent = downHisto(0).toDouble / segArea
+      logger.info(s"downContent=$downContent")
+
+      val left = ImageSegmenter.Box(seg.box.x-seg.box.width,seg.box.y,seg.box.x-1,seg.box.y2)
+      imp3.setRoi(left.toRoi)
+      val leftHisto = imp3.getProcessor.getHistogram
+      val leftContent = leftHisto(0).toDouble / segArea
+      logger.info(s"leftContent=$leftContent")
+
+      val right = ImageSegmenter.Box(seg.box.x+seg.box.width+1,seg.box.y,seg.box.x2+seg.box.width,seg.box.y2)
+      imp3.setRoi(right.toRoi)
+      val rightHisto = imp3.getProcessor.getHistogram
+      val rightContent = rightHisto(0).toDouble / segArea
+      logger.info(s"rightContent=$rightContent")
+
+      (if (math.abs(segContent-upContent) < ContentDiff &&
+        seg.box.height < seg.box.y &&
+        largerRtree.searchIntersection(up.toArchery).isEmpty)
+        Seq(ImageSegment(imp, up))
+      else Seq()) ++
+        (if (math.abs(segContent-downContent) < ContentDiff &&
+          seg.box.y+seg.box.height*2 < imp3.getHeight &&
+          largerRtree.searchIntersection(down.toArchery).isEmpty)
+          Seq(ImageSegment(imp, down))
+        else Seq()) ++
+        (if (math.abs(segContent-leftContent) < ContentDiff &&
+          seg.box.width < seg.box.x &&
+          largerRtree.searchIntersection(left.toArchery).isEmpty)
+          Seq(ImageSegment(imp, left))
+        else Seq()) ++
+        (if (math.abs(segContent-rightContent) < ContentDiff &&
+          seg.box.x+seg.box.width*2 < imp3.getWidth &&
+          largerRtree.searchIntersection(right.toArchery).isEmpty)
+          Seq(ImageSegment(imp, right))
+        else Seq())
     }
-    log(imp2, "[GappedImageSegmenter] recover missing panels", segs.map{s=>s.box.toRoi}: _*)
+    segs = larger ++ recoverMissing
+    log(imp2, "[GappedImageSegmenter] recover missing panels", recoverMissing.map{s=>s.box.toRoi}: _*)
+
     //check segmentation area
-    val segmentArea = segments.map{s=>(s.box.x2-s.box.x)*(s.box.y2-s.box.y)}.sum
+    val segmentArea = segs.map{s=>(s.box.x2-s.box.x)*(s.box.y2-s.box.y)}.sum
     val imageArea = imp2.getWidth * imp2.getHeight
-    val SegmentAreaCutoff = 0.5
-    if (segmentArea / imageArea < SegmentAreaCutoff) {
+    if (segmentArea.toDouble / imageArea.toDouble < SegmentAreaCutoff) {
       logger.warn(s"Image segment area is less than $SegmentAreaCutoff, skipping")
       return Seq()
     }
     // recover small components
-    val NewBoxPctCutoff = 0.2
-    val recovered = ArrayBuffer[ImageSegment]()
-    for (small <- smaller) {
-      var nearest: Option[ImageSegment] = None
-      var nearestDistance: Option[Double] = None
-      for (seg <- segs) {
-        val distance = GappedImageSegmenter.rectDistance(small.box, seg.box)
-        if (nearest.isEmpty || distance < nearestDistance.get) {
-          nearest = Some(seg)
-          nearestDistance = Some(distance)
-        }
-      }
-      for { near <- nearest } {
-        val newBox = ImageSegmenter.Box(math.min(small.box.x, near.box.x),
-            math.min(small.box.y, near.box.y),
-            math.max(small.box.x2, near.box.x2),
-            math.max(small.box.y2, near.box.y2))
-        if (newBox.x2-newBox.x != near.box.x2-near.box.x &&
-            newBox.y2-newBox.y != near.box.y2-near.box.y)
-        {
-          recovered += near
-        }
-        else {
-          if (newBox.x2-newBox.x > NewBoxPctCutoff*(near.box.x2-near.box.x) ||
-              newBox.y2-newBox.y > NewBoxPctCutoff*(near.box.y2-near.box.y))
-          {
-            recovered += small
-            recovered += near
+    @tailrec def
+    recoverSmallComponents( smaller: Seq[ImageSegment],
+                            segments: Seq[ImageSegment]): Seq[ImageSegment] =
+    {
+      smaller match {
+        case small :: ss =>
+          val nearest = segments.
+            sortBy {s => GappedImageSegmenter.rectDistance(small.box, s.box)}.
+            headOption
+          nearest match {
+            case Some(n) =>
+              recoverSmallComponents(ss,
+                segments.filter{_ != n} ++
+                  Seq(ImageSegment(
+                    small.imp,
+                    ImageSegmenter.Box(
+                      math.min(small.box.x, n.box.x),
+                      math.min(small.box.y, n.box.y),
+                      math.max(small.box.x2, n.box.x2),
+                      math.max(small.box.y2, n.box.y2)))))
+            case None => segments
           }
-          else {
-            recovered += ImageSegment(small.imp, newBox)
-          }
-        }
+        case _ => segments
       }
     }
+    val recovered = recoverSmallComponents(smaller, segs)
+    segs = ArrayBuffer(recovered: _*)
     log(imp2, "[GappedImageSegmenter] recover small components", recovered.map{s=>s.box.toRoi}: _*)
-    recovered
+    segs
   }
 }
 

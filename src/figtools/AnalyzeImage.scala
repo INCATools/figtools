@@ -363,7 +363,7 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
       {
         ordered += first._2
         for {
-          next <- rtree.search(Box(
+          next <- rtree.searchIntersection(Box(
             first._1.box.x2,
             (first._1.box.y + 0.1 * (first._1.box.y2 - first._1.box.y + 1)).asInstanceOf[Float],
             first._1.box.x2,

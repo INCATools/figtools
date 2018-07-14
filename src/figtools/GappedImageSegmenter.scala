@@ -14,6 +14,11 @@ import ij.gui.Roi
 
 import scala.annotation.tailrec
 
+// TODO:
+// - fix recover small components Fig_3.tif
+// - recover missing panels
+//   - look at overlapping missing panels to determine proper spacing
+//   - check matching border colors
 class GappedImageSegmenter extends ImageSegmenter {
   val logger = Logger(getClass.getSimpleName)
   val BinarizeThreshold = 0.95
@@ -23,7 +28,8 @@ class GappedImageSegmenter extends ImageSegmenter {
   val BboxThreshold = 0.2
   val NewBoxPctCutoff = 0.2
   val SegmentAreaCutoff = 0.5
-  val ContentDiff = 0.3
+  val ContentDiff = 0.1
+  val ContentMin = 0.01
 
   override def segment(imp: ImagePlus): Seq[ImageSegment] = {
     val imp2 = imp.duplicate()
@@ -57,6 +63,7 @@ class GappedImageSegmenter extends ImageSegmenter {
 
     // Get the objects and iterate through them
     var segs = ArrayBuffer[ImageSegment]()
+    val smallSegs = ArrayBuffer[ImageSegment]()
     (0 until rt.getCounter).foreach{i=>
       val bx = rt.getValue("BX", i).toInt
       val by = rt.getValue("BY", i).toInt
@@ -64,12 +71,18 @@ class GappedImageSegmenter extends ImageSegmenter {
       val height = rt.getValue("Height", i).toInt
 
       if (width > imp2.getWidth.toDouble / ParticleThreshold &&
-          height > imp2.getHeight.toDouble / ParticleThreshold &&
-          (width*height).toDouble / (imp2.getWidth*imp2.getHeight).toDouble < largeParticleFilter)
+          height > imp2.getHeight.toDouble / ParticleThreshold)
       {
+        if ((width*height).toDouble / (imp2.getWidth*imp2.getHeight).toDouble < largeParticleFilter) {
+          val box = ImageSegmenter.Box(bx, by, bx+width, by+height)
+          val segment = ImageSegment(imp, box)
+          segs += segment
+        }
+      }
+      else {
         val box = ImageSegmenter.Box(bx, by, bx+width, by+height)
         val segment = ImageSegment(imp, box)
-        segs += segment
+        smallSegs += segment
       }
     }
     log(imp2,
@@ -170,21 +183,25 @@ class GappedImageSegmenter extends ImageSegmenter {
       logger.info(s"rightContent=$rightContent")
 
       (if (math.abs(segContent-upContent) < ContentDiff &&
+        upContent > ContentMin &&
         seg.box.height < seg.box.y &&
         largerRtree.searchIntersection(up.toArchery).isEmpty)
         Seq(ImageSegment(imp, up))
       else Seq()) ++
         (if (math.abs(segContent-downContent) < ContentDiff &&
+          downContent > ContentMin &&
           seg.box.y+seg.box.height*2 < imp3.getHeight &&
           largerRtree.searchIntersection(down.toArchery).isEmpty)
           Seq(ImageSegment(imp, down))
         else Seq()) ++
         (if (math.abs(segContent-leftContent) < ContentDiff &&
+          leftContent > ContentMin &&
           seg.box.width < seg.box.x &&
           largerRtree.searchIntersection(left.toArchery).isEmpty)
           Seq(ImageSegment(imp, left))
         else Seq()) ++
         (if (math.abs(segContent-rightContent) < ContentDiff &&
+          rightContent > ContentMin &&
           seg.box.x+seg.box.width*2 < imp3.getWidth &&
           largerRtree.searchIntersection(right.toArchery).isEmpty)
           Seq(ImageSegment(imp, right))
@@ -226,7 +243,7 @@ class GappedImageSegmenter extends ImageSegmenter {
         case _ => segments
       }
     }
-    val recovered = recoverSmallComponents(smaller, segs)
+    val recovered = recoverSmallComponents(smaller ++ smallSegs, segs)
     segs = ArrayBuffer(recovered: _*)
     log(imp2, "[GappedImageSegmenter] recover small components", recovered.map{s=>s.box.toRoi}: _*)
     segs

@@ -37,7 +37,6 @@ class GappedImageSegmenter extends ImageSegmenter {
 
     val rt = new ResultsTable
     val particleAnalyzer = new ParticleAnalyzer(
-      ParticleAnalyzer.EXCLUDE_EDGE_PARTICLES |
       ParticleAnalyzer.CLEAR_WORKSHEET |
       ParticleAnalyzer.IN_SITU_SHOW,
       Measurements.MIN_MAX |

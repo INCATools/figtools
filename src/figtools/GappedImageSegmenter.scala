@@ -13,6 +13,7 @@ import ImageLog.log
 import ij.gui.Roi
 
 import scala.annotation.tailrec
+import scala.collection.immutable
 
 // TODO:
 // - fix recover small components Fig_3.tif
@@ -207,8 +208,10 @@ class GappedImageSegmenter extends ImageSegmenter {
           Seq(ImageSegment(imp, right))
         else Seq())
     }
-    segs = larger ++ recoverMissing
-    log(imp2, "[GappedImageSegmenter] recover missing panels", recoverMissing.map{s=>s.box.toRoi}: _*)
+    // TODO: fix recover missing panels code
+    //segs = larger ++ recoverMissing
+    segs = larger
+    //log(imp2, "[GappedImageSegmenter] recover missing panels", recoverMissing.map{s=>s.box.toRoi}: _*)
 
     //check segmentation area
     val segmentArea = segs.map{s=>(s.box.x2-s.box.x)*(s.box.y2-s.box.y)}.sum
@@ -219,7 +222,7 @@ class GappedImageSegmenter extends ImageSegmenter {
     }
     // recover small components
     @tailrec def
-    recoverSmallComponents( smaller: Seq[ImageSegment],
+    recoverSmallComponents( smaller: immutable.List[ImageSegment],
                             segments: Seq[ImageSegment]): Seq[ImageSegment] =
     {
       smaller match {
@@ -229,23 +232,27 @@ class GappedImageSegmenter extends ImageSegmenter {
             headOption
           nearest match {
             case Some(n) =>
-              recoverSmallComponents(ss,
-                segments.filter{_ != n} ++
-                  Seq(ImageSegment(
+              val merged = Seq(ImageSegment(
                     small.imp,
                     ImageSegmenter.Box(
                       math.min(small.box.x, n.box.x),
                       math.min(small.box.y, n.box.y),
                       math.max(small.box.x2, n.box.x2),
-                      math.max(small.box.y2, n.box.y2)))))
-            case None => segments
+                      math.max(small.box.y2, n.box.y2))))
+              val newSegments = segments.filter{_ != n} ++ merged
+              recoverSmallComponents(ss, newSegments)
+            case None =>
+              segments
           }
-        case _ => segments
+        case _ =>
+          segments
       }
     }
-    val recovered = recoverSmallComponents(smaller ++ smallSegs, segs)
-    segs = ArrayBuffer(recovered: _*)
+    val recovered = recoverSmallComponents((smaller ++ smallSegs).toList, segs)
     log(imp2, "[GappedImageSegmenter] recover small components", recovered.map{s=>s.box.toRoi}: _*)
+    val mergedRecovered = mergeOverlappingSegs(recovered)
+    log(imp2, "[GappedImageSegmenter] recover small components, merged", mergedRecovered.map{s=>s.box.toRoi}: _*)
+    segs = ArrayBuffer(mergedRecovered: _*)
     segs
   }
 }

@@ -105,7 +105,8 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
             break
           }
 
-          val captionGroups = CaptionSegmenter.segmentCaption(description_nohtml)
+          // TODO: handle checking multiple caption groups, not just the first one
+          val captionGroups = CaptionSegmenter.segmentCaption(description_nohtml).take(1)
           logger.info(s"captionGroups=${pp(captionGroups)}")
           val hasCaptions = captionGroups.
             flatMap { cg => cg.captions }.

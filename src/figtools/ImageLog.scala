@@ -10,8 +10,14 @@ import ij.{IJ, ImagePlus, WindowManager}
 import javax.swing.SwingUtilities
 
 object ImageLog {
+  // union type magic
+  type ¬[A] = A => Nothing
+  type ∨[T, U] = ¬[¬[T] with ¬[U]]
+  type ¬¬[A] = ¬[¬[A]]
+  type |∨|[T, U] = { type λ[X] = ¬¬[X] <:< (T ∨ U) }
+
   val logger = Logger(getClass.getSimpleName)
-  def log(imp_ : ImagePlus, description: String, rois: Any*): Unit = {
+  def log[R : (Roi |∨| (String,Roi))#λ](imp_ : ImagePlus, description: String, rois: R*): Unit = {
     logger.info(s"${imp_.getTitle}: $description: Rois: ${pprint.apply(rois, height=50)}")
     SwingUtilities.invokeAndWait(()=>{
       val imp = imp_.duplicate()

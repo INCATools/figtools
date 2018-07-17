@@ -10,13 +10,14 @@ import ij.plugin.filter.ParticleAnalyzer
 
 import scala.collection.mutable.ArrayBuffer
 import ImageLog.log
+import com.esri.core.geometry._
 import ij.gui.Roi
 
 import scala.annotation.tailrec
 import scala.collection.immutable
 
 // TODO:
-// - fix recover small components Fig_3.tif
+// - fix recover small components - make sure it gets added to closest actual ROI, not box
 // - recover missing panels
 //   - look at overlapping missing panels to determine proper spacing
 //   - check matching border colors
@@ -26,9 +27,9 @@ class GappedImageSegmenter extends ImageSegmenter {
   val ParticleThreshold = 20.0
   val largeParticleFilter = 0.9
   val MergeThreshold = 0.1
-  val BboxThreshold = 0.2
+  val BboxThreshold = 0.15
   val NewBoxPctCutoff = 0.2
-  val SegmentAreaCutoff = 0.5
+  val SegmentAreaCutoff = 0.4
   val ContentDiff = 0.1
   val ContentMin = 0.01
 
@@ -217,7 +218,7 @@ class GappedImageSegmenter extends ImageSegmenter {
     val segmentArea = segs.map{s=>(s.box.x2-s.box.x)*(s.box.y2-s.box.y)}.sum
     val imageArea = imp2.getWidth * imp2.getHeight
     if (segmentArea.toDouble / imageArea.toDouble < SegmentAreaCutoff) {
-      logger.warn(s"Image segment area is less than $SegmentAreaCutoff, skipping")
+      logger.warn(s"Image segment area is $segmentArea/$imageArea=${segmentArea.toDouble/imageArea.toDouble} is less than $SegmentAreaCutoff, skipping")
       return Seq()
     }
     // recover small components
@@ -258,26 +259,24 @@ class GappedImageSegmenter extends ImageSegmenter {
 }
 
 object GappedImageSegmenter {
-  def distance[T](x: T, y: T, x2: T, y2: T)(implicit num: Numeric[T]): Double = {
-    import num._
-    math.sqrt(((x2 - x)*(x2 - x) + (y2 - y) * (y2 - y)).toDouble)
-  }
-  // https://stackoverflow.com/questions/4978323/how-to-calculate-distance-between-two-rectangles-context-a-game-in-lua
+  val factory = OperatorFactoryLocal.getInstance()
+  val op = factory.getOperator(Operator.Type.Distance).asInstanceOf[OperatorDistance]
+
   def rectDistance[T](box1: ImageSegmenter.Box[T], box2: ImageSegmenter.Box[T])(implicit num: Numeric[T]): Double = {
     import num._
-    val left = box2.x2 < box1.x
-    val right = box1.x2 < box2.x
-    val bottom = box2.y2 < box1.y
-    val top = box1.y2 < box2.y
-    if (top && left) distance(box1.x, box1.y2, box2.x2, box2.y)
-    else if (left && bottom) distance(box1.x, box1.y, box2.x2, box2.y2)
-    else if (bottom && right) distance(box1.x2, box1.y, box2.x, box2.y2)
-    else if (right && top) distance(box1.x2, box1.y2, box2.x, box2.y)
-    else if (left) (box1.x - box2.x2).toDouble
-    else if (right) (box2.x - box1.x2).toDouble
-    else if (bottom) (box1.y - box2.y2).toDouble
-    else if (top) (box2.y - box1.y2).toDouble
-    // rectangles intersect
-    else 0
+    val poly1 = new Polygon()
+    poly1.startPath(box1.x.toDouble, box1.y.toDouble)
+    poly1.lineTo(box1.x2.toDouble, box1.y.toDouble)
+    poly1.lineTo(box1.x2.toDouble, box1.y2.toDouble)
+    poly1.lineTo(box1.x.toDouble, box1.y2.toDouble)
+
+    val poly2 = new Polygon()
+    poly2.startPath(box2.x.toDouble, box2.y.toDouble)
+    poly2.lineTo(box2.x2.toDouble, box2.y.toDouble)
+    poly2.lineTo(box2.x2.toDouble, box2.y2.toDouble)
+    poly2.lineTo(box2.x.toDouble, box2.y2.toDouble)
+    op.execute(poly1, poly2, new ProgressTracker {
+      override def progress(step: Int, totalExpectedSteps: Int): Boolean = true
+    })
   }
 }

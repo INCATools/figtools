@@ -50,7 +50,8 @@ lazy val figtools = (project in file(".")).
       "org.tsers.zeison" %% "zeison" % "0.8.0-SNAPSHOT",
       "fr.inra.ijpb" % "MorphoLibJ_" % "1.3.4",
       "sc.fiji" % "imagescience" % "3.0.0",
-      "com.softwaremill.sttp" %% "core" % "1.2.0"
+      "com.softwaremill.sttp" %% "core" % "1.2.0",
+      "com.esri.geometry" % "esri-geometry-api" % "2.2.0"
     ),
     artifactPath in (Compile, packageBin) := {
       baseDirectory.value / "bin" / name.value

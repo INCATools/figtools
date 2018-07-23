@@ -1,6 +1,7 @@
 package figtools
 import com.typesafe.scalalogging.Logger
 import org.tsers.zeison.Zeison
+import better.files._
 import caseapp._
 import caseapp.core.help.WithHelp
 
@@ -34,7 +35,11 @@ final case class DownloadAll(
   outDir: String = "."
 ) extends Main
 
+@ArgsName("List of FigShare IDs to analyze (optional)")
 final case class Analyze(
+  @HelpMessage("Directory in which to analyze image files")
+  @ValueDescription("DIR")
+  dir: String = ".",
   @HelpMessage("Resolution to use when exporting PDFs to images")
   @ValueDescription("DPI")
   pdfExportResolution: Int = 300,
@@ -112,7 +117,7 @@ object FigTools extends CommandApp[Main] {
       case analyze: Analyze =>
         edgeDetector = analyze.edgeDetector
         pdfExportResolution = analyze.pdfExportResolution
-        new AnalyzeImage(analyze.edgeDetector, analyze.pdfExportResolution).analyze()
+        new AnalyzeImage(analyze.edgeDetector, analyze.pdfExportResolution, analyze.dir.toFile, args.remaining).analyze()
     }
   }
 }

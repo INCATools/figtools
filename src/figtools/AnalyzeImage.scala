@@ -31,7 +31,12 @@ import archery.{Box, Entry, RTree}
 
 import scala.annotation.tailrec
 
-class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 300) {
+class AnalyzeImage(
+                    edgeDetector: String = "imagej",
+                    pdfExportResolution: Int = 300,
+                    dir: File = file".",
+                    ids: Seq[String])
+{
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
   val logger = Logger(getClass.getSimpleName)
 
@@ -50,8 +55,11 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
     val imagej = new ImageJ(ImageJ.EMBEDDED)
     imagej.exitWhenQuitting(true)
 
-    val dir = file"."
-    for (datapackage <- dir.listRecursively.filter(_.name == "datapackage.json")) {
+    val iter = if (ids.nonEmpty)
+      ids.iterator.flatMap{i=>(dir / i).listRecursively}
+    else dir.listRecursively
+    for (datapackage <- iter.filter(_.name == "datapackage.json")) {
+      val id = datapackage.parent.toString
       val json = Zeison.parse(datapackage.contentAsString)
       val description_nohtml = json.description_nohtml.toStr
       logger.info(s"file=$datapackage")
@@ -127,6 +135,7 @@ class AnalyzeImage(edgeDetector: String = "imagej", pdfExportResolution: Int = 3
             logger.warn(s"Could not open image file $imageFile, skipping")
             break
           }
+          imp.setTitle(s"$id: ${imp.getTitle}")
           log(imp, "[AnalyzeImage] original image")
 
           case class SegmentDescription(label: String, word: Option[Word], segIndex: Int)

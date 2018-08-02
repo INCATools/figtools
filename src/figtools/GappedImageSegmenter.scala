@@ -1,6 +1,5 @@
 package figtools
 
-import archery.{Entry, RTree}
 import com.typesafe.scalalogging.Logger
 import figtools.ImageSegmenter.ImageSegment
 import ij.ImagePlus
@@ -10,11 +9,13 @@ import ij.plugin.filter.ParticleAnalyzer
 
 import scala.collection.mutable.ArrayBuffer
 import ImageLog.log
-import com.esri.core.geometry._
+import com.github.davidmoten.rtree.{Entries, RTree}
+import com.github.davidmoten.rtree.geometry.{Geometries, Rectangle}
 import ij.gui.Roi
 
 import scala.annotation.tailrec
-import scala.collection.immutable
+import scala.collection.JavaConverters._
+import rx.lang.scala.JavaConverters._
 
 // TODO:
 // - fix recover small components - make sure it gets added to closest actual ROI, not box
@@ -92,9 +93,10 @@ class GappedImageSegmenter extends ImageSegmenter {
       segs.map{_.box.toRoi}: _*)
 
     @tailrec def mergeOverlappingSegs(segs: Seq[ImageSegment]): Seq[ImageSegment] = {
-      val rtree = RTree(segs.map{s=>Entry(s.box.toArchery, s)}: _*)
+      val rtree = RTree.create[ImageSegment,Rectangle].add(
+        segs.map{s=>Entries.entry(s, s.box.toRect)}.asJava)
       val overlapping = segs.flatMap { o =>
-        val overlaps = rtree.searchIntersection(o.box.toArchery).filter { overlaps =>
+        val overlaps = rtree.search(o.box.toRect).filter { overlaps =>
           val intersectionBox = ImageSegmenter.Box(
             math.max(o.box.x, overlaps.value.box.x),
             math.max(o.box.y, overlaps.value.box.y),
@@ -107,21 +109,21 @@ class GappedImageSegmenter extends ImageSegmenter {
             (o.box.x2 - o.box.x) * (o.box.y2 - o.box.y),
             (overlaps.value.box.x2 - overlaps.value.box.x) * (overlaps.value.box.y2 - overlaps.value.box.y))
           intersectionArea.toDouble / minBoxArea.toDouble > MergeThreshold
-        }.filter{_.value != o}
-        if (overlaps.nonEmpty) Seq((o,overlaps.head.value)) else Seq()
+        }.asScala.filter{_.value != o}
+        if (overlaps.nonEmpty.toBlocking.single) Seq((o,overlaps.toBlocking.head)) else Seq()
       }.headOption
 
       overlapping match {
         case Some((o,overlaps)) =>
           mergeOverlappingSegs(
-            segs.filter { s => overlaps != s && o != s } ++
+            segs.filter { s => overlaps.value != s && o != s } ++
               Seq(ImageSegment(
                 o.imp,
                 ImageSegmenter.Box(
-                  math.min(o.box.x, overlaps.box.x),
-                  math.min(o.box.y, overlaps.box.y),
-                  math.max(o.box.x2, overlaps.box.x2),
-                  math.max(o.box.y2, overlaps.box.y2)))))
+                  math.min(o.box.x, overlaps.geometry.x1.toInt),
+                  math.min(o.box.y, overlaps.geometry.y1.toInt),
+                  math.max(o.box.x2, overlaps.geometry.x2.toInt),
+                  math.max(o.box.y2, overlaps.geometry.y2.toInt)))))
         case None => segs
       }
     }
@@ -152,7 +154,8 @@ class GappedImageSegmenter extends ImageSegmenter {
 
     // recover missing panels
     val imp3 = imp2.duplicate()
-    val largerRtree = RTree(larger.map{s=>Entry(s.box.toArchery, s)}: _*)
+    val largerRtree = RTree.create[ImageSegment,Rectangle].
+      add(larger.map{s=>Entries.entry(s, s.box.toRect)}.asJava)
     val recoverMissing = larger.flatMap{seg =>
       imp3.setRoi(seg.box.toRoi)
       val segArea = ((seg.box.x2 - seg.box.x) * (seg.box.y2 - seg.box.y)).toDouble
@@ -187,25 +190,25 @@ class GappedImageSegmenter extends ImageSegmenter {
       (if (math.abs(segContent-upContent) < ContentDiff &&
         upContent > ContentMin &&
         seg.box.height < seg.box.y &&
-        largerRtree.searchIntersection(up.toArchery).isEmpty)
+        Option(largerRtree.search(up.toRect).firstOrDefault(null)).isDefined)
         Seq(ImageSegment(imp, up))
       else Seq()) ++
         (if (math.abs(segContent-downContent) < ContentDiff &&
           downContent > ContentMin &&
           seg.box.y+seg.box.height*2 < imp3.getHeight &&
-          largerRtree.searchIntersection(down.toArchery).isEmpty)
+          Option(largerRtree.search(down.toRect).firstOrDefault(null)).isDefined)
           Seq(ImageSegment(imp, down))
         else Seq()) ++
         (if (math.abs(segContent-leftContent) < ContentDiff &&
           leftContent > ContentMin &&
           seg.box.width < seg.box.x &&
-          largerRtree.searchIntersection(left.toArchery).isEmpty)
+          Option(largerRtree.search(left.toRect).firstOrDefault(null)).isDefined)
           Seq(ImageSegment(imp, left))
         else Seq()) ++
         (if (math.abs(segContent-rightContent) < ContentDiff &&
           rightContent > ContentMin &&
           seg.box.x+seg.box.width*2 < imp3.getWidth &&
-          largerRtree.searchIntersection(right.toArchery).isEmpty)
+          Option(largerRtree.search(right.toRect).firstOrDefault(null)).isDefined)
           Seq(ImageSegment(imp, right))
         else Seq())
     }
@@ -222,36 +225,57 @@ class GappedImageSegmenter extends ImageSegmenter {
       return Seq()
     }
     // recover small components
-    @tailrec def
-    recoverSmallComponents( smaller: immutable.List[ImageSegment],
-                            segments: Seq[ImageSegment]): Seq[ImageSegment] =
+    @tailrec
+    def recoverSmallComponents(rtree: RTree[(ImageSegment,Boolean),Rectangle])
+    : RTree[(ImageSegment,Boolean),Rectangle] =
     {
-      smaller match {
-        case small :: ss =>
-          val nearest = segments.
-            sortBy {s => GappedImageSegmenter.rectDistance(small.box, s.box)}.
-            headOption
-          nearest match {
-            case Some(n) =>
-              val merged = Seq(ImageSegment(
-                    small.imp,
-                    ImageSegmenter.Box(
-                      math.min(small.box.x, n.box.x),
-                      math.min(small.box.y, n.box.y),
-                      math.max(small.box.x2, n.box.x2),
-                      math.max(small.box.y2, n.box.y2))))
-              val newSegments = segments.filter{_ != n} ++ merged
-              recoverSmallComponents(ss, newSegments)
-            case None =>
-              segments
-          }
-        case _ =>
-          segments
+      // use the rtree to compute nearest neighbor for each segment
+      val distances = rtree.entries().toBlocking.getIterator.asScala.flatMap(entry=>{
+        val (seg, _) = entry.value()
+        val nearest = rtree.nearest(entry.geometry(), Double.MaxValue, 1).
+          filter{e=>e.value()._1 != seg}.
+          toBlocking.getIterator.asScala.toSeq.headOption
+        if (nearest.isEmpty) Seq() else Seq((entry, nearest.get))
+      }).toSeq
+      // if there are at least two elements left
+      if (distances.nonEmpty) {
+        // compute the closest pair of segments
+        val closest = distances.minBy{case (e,n)=>e.geometry().distance(n.geometry())}
+        // remove the pair from the rtree
+        var rtree2 = rtree.delete(closest._1.value, closest._1.geometry)
+        rtree2 = rtree2.delete(closest._2.value, closest._2.geometry)
+        // merge the pair and add to the rtree
+        rtree2 = rtree2.add(
+          (ImageSegment(
+              closest._1.value._1.imp,
+              ImageSegmenter.Box(
+                math.min(closest._1.value._1.box.x, closest._2.value._1.box.x),
+                math.min(closest._1.value._1.box.y, closest._2.value._1.box.y),
+                math.max(closest._1.value._1.box.x2, closest._2.value._1.box.x2),
+                math.max(closest._1.value._1.box.y2, closest._2.value._1.box.y2))),
+            closest._1.value._2 || closest._2.value._2),
+          Geometries.rectangle(
+            math.min(closest._1.value._1.box.x, closest._2.value._1.box.x),
+            math.min(closest._1.value._1.box.y, closest._2.value._1.box.y),
+            math.max(closest._1.value._1.box.x2, closest._2.value._1.box.x2),
+            math.max(closest._1.value._1.box.y2, closest._2.value._1.box.y2)))
+        // if there are still any small segments, iterate again
+        if (rtree2.entries().toBlocking.getIterator.asScala.exists(e=> !e.value()._2))
+          recoverSmallComponents(rtree2)
+        else rtree2
       }
+      else rtree
     }
-    val recovered = recoverSmallComponents((smaller ++ smallSegs).toList, segs)
-    log(imp2, "[GappedImageSegmenter] recover small components", recovered.map{s=>s.box.toRoi}: _*)
-    val mergedRecovered = mergeOverlappingSegs(recovered)
+
+    val recoverSegs = smaller ++ smallSegs
+    val rtree = RTree.create[(ImageSegment,Boolean),Rectangle].add(
+      (segs.map{s=>Entries.entry((s,true), s.box.toRect)} ++
+        recoverSegs.map{s=>Entries.entry((s,false), s.box.toRect)}).asJava)
+    val recovered = recoverSmallComponents(rtree).entries().toBlocking.getIterator.asScala.toSeq
+
+    log(imp2, "[GappedImageSegmenter] recover small components",
+      recovered.map{e=>e.value()._1.box.toRoi}: _*)
+    val mergedRecovered = mergeOverlappingSegs(recovered.map{e=>e.value()._1})
     log(imp2, "[GappedImageSegmenter] recover small components, merged", mergedRecovered.map{s=>s.box.toRoi}: _*)
     segs = ArrayBuffer(mergedRecovered: _*)
     segs
@@ -259,24 +283,28 @@ class GappedImageSegmenter extends ImageSegmenter {
 }
 
 object GappedImageSegmenter {
-  val factory = OperatorFactoryLocal.getInstance()
-  val op = factory.getOperator(Operator.Type.Distance).asInstanceOf[OperatorDistance]
-
-  def rectDistance[T](box1: ImageSegmenter.Box[T], box2: ImageSegmenter.Box[T])(implicit num: Numeric[T]): Double = {
+  def distance[T](x: T, y: T, x2: T, y2: T)(implicit num: Numeric[T]): Double = {
     import num._
-    val poly1 = new Polygon()
-    poly1.startPath(box1.x.toDouble, box1.y.toDouble)
-    poly1.lineTo(box1.x2.toDouble, box1.y.toDouble)
-    poly1.lineTo(box1.x2.toDouble, box1.y2.toDouble)
-    poly1.lineTo(box1.x.toDouble, box1.y2.toDouble)
+    math.sqrt(((x2 - x)*(x2 - x) + (y2 - y) * (y2 - y)).toDouble)
+  }
 
-    val poly2 = new Polygon()
-    poly2.startPath(box2.x.toDouble, box2.y.toDouble)
-    poly2.lineTo(box2.x2.toDouble, box2.y.toDouble)
-    poly2.lineTo(box2.x2.toDouble, box2.y2.toDouble)
-    poly2.lineTo(box2.x.toDouble, box2.y2.toDouble)
-    op.execute(poly1, poly2, new ProgressTracker {
-      override def progress(step: Int, totalExpectedSteps: Int): Boolean = true
-    })
+  def rectDistance[T](box1: ImageSegmenter.Box[T], box2: ImageSegmenter.Box[T])(implicit num: Numeric[T]): Option[Double] = {
+    import num._
+    val left = box2.x2 < box1.x
+    val right = box1.x2 < box2.x
+    val bottom = box2.y2 < box1.y
+    val top = box1.y2 < box2.y
+    if (left) Some((box1.x - box2.x2).toDouble)
+    else if (right) Some((box2.x - box1.x2).toDouble)
+    else if (bottom) Some((box1.y - box2.y2).toDouble)
+    else if (top) Some((box2.y - box1.y2).toDouble)
+    //    else if (top && left) distance(box1.x, box1.y2, box2.x2, box2.y)
+    //    else if (left && bottom) distance(box1.x, box1.y, box2.x2, box2.y2)
+    //    else if (bottom && right) distance(box1.x2, box1.y, box2.x, box2.y2)
+    //    else if (right && top) distance(box1.x2, box1.y2, box2.x, box2.y)
+    // rectangles intersect
+    else if (box1.x <= box2.x2 && box2.x <= box1.x2 && box1.y <= box2.y2 && box2.y <= box1.y2) Some(0)
+    // non-adjacent overlapping
+    else None
   }
 }

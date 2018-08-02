@@ -45,13 +45,13 @@ lazy val figtools = (project in file(".")).
       "ch.qos.logback" % "logback-classic" % "1.2.3",
       "com.typesafe.scala-logging" %% "scala-logging" % "3.7.2",
       "com.lihaoyi" %% "pprint" % "0.5.3",
-      "org.spire-math" %% "archery" % "0.6.0",
       "org.openimaj" % "image-processing" % "1.3.6",
       "org.tsers.zeison" %% "zeison" % "0.8.0-SNAPSHOT",
       "fr.inra.ijpb" % "MorphoLibJ_" % "1.3.4",
       "sc.fiji" % "imagescience" % "3.0.0",
       "com.softwaremill.sttp" %% "core" % "1.2.0",
-      "com.esri.geometry" % "esri-geometry-api" % "2.2.0"
+      "com.github.davidmoten" % "rtree" % "0.8-RC10",
+      "io.reactivex" %% "rxscala" % "0.26.5",
     ),
     artifactPath in (Compile, packageBin) := {
       baseDirectory.value / "bin" / name.value

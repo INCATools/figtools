@@ -23,12 +23,12 @@ import scala.collection.mutable.ArrayBuffer
 import net.sourceforge.tess4j.{Tesseract, Word}
 import org.tsers.zeison.Zeison
 import ImageLog.log
+import com.github.davidmoten.rtree.geometry.{Geometries, Rectangle}
+import com.github.davidmoten.rtree.{Entries, RTree}
 import ij.gui.Roi
 import ij.plugin.frame.RoiManager
 
 import scala.collection.mutable
-import archery.{Box, Entry, RTree}
-
 import scala.annotation.tailrec
 
 class AnalyzeImage(
@@ -362,9 +362,9 @@ class AnalyzeImage(
 
   // 1. group segments into rows/columns
   def orderSegments(segments: Seq[ImageSegment]): Seq[Int] = {
-    val rtree = RTree(segments.zipWithIndex.map { case (s, i) =>
-      Entry(Box(s.box.x, s.box.y, s.box.x2, s.box.y2), (s, i))
-    }: _*)
+    val rtree = RTree.create[(ImageSegment,Int),Rectangle].add(
+      segments.zipWithIndex.map{case (s,i)=>Entries.entry((s,i), s.box.toRect)}.asJava)
+
     val ordered = new util.LinkedHashSet[Int]().asScala
     while (ordered.size < segments.size) {
       for (first <- segments.zipWithIndex.
@@ -372,27 +372,15 @@ class AnalyzeImage(
         sortBy { s => (s._1.box.y, s._1.box.x) }.headOption)
       {
         ordered += first._2
-        for {
-          next <- rtree.searchIntersection(Box(
+        val rowSearch = rtree.search(Geometries.rectangle(
             first._1.box.x2,
             (first._1.box.y + 0.1 * (first._1.box.y2 - first._1.box.y + 1)).asInstanceOf[Float],
             first._1.box.x2,
             (first._1.box.y2 - 0.1 * (first._1.box.y2 - first._1.box.y + 1)).asInstanceOf[Float])).
-          sortWith { case (a, b) =>
-            GappedImageSegmenter.rectDistance(
-              ImageSegmenter.Box(
-                a.value._1.box.x,
-                a.value._1.box.y,
-                a.value._1.box.x2,
-                a.value._1.box.y2),
-              ImageSegmenter.Box(
-                b.value._1.box.x,
-                b.value._1.box.y,
-                b.value._1.box.x2,
-                b.value._1.box.y2)) < 0
-            }.headOption}
-        {
-          ordered += next.value._2
+          toBlocking.getIterator.asScala.filter{e=>e.value._2 != first._2}.toSeq
+        if (rowSearch.nonEmpty) {
+          val nearest = rowSearch.minBy{e=> e.geometry().distance(first._1.box.toRect) }
+          ordered += nearest.value._2
         }
       }
     }

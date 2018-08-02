@@ -1,5 +1,6 @@
 package figtools
 
+import com.github.davidmoten.rtree.geometry.{Geometries, Rectangle}
 import figtools.ImageSegmenter.ImageSegment
 import ij.ImagePlus
 import ij.gui.Roi
@@ -13,7 +14,7 @@ object ImageSegmenter {
     import num._
     def width: T = x2 - x + 1.asInstanceOf[T]
     def height: T = y2 - y + 1.asInstanceOf[T]
-    def toArchery: archery.Box = archery.Box(x.toFloat, y.toFloat, x2.toFloat, y2.toFloat)
+    def toRect: Rectangle = Geometries.rectangle(x.toFloat, y.toFloat, x2.toFloat, y2.toFloat)
     def toRoi: Roi = new Roi(x.toDouble, y.toDouble, width.toDouble, height.toDouble)
   }
   case class ImageSegment(imp: ImagePlus, box: Box[Int])

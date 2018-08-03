@@ -297,7 +297,7 @@ class AnalyzeImage(
               case Some(((box, ss), i)) =>
                 val nearest = segments.zipWithIndex.
                   filter { case (_, ni) => i != ni }.
-                  sortBy { case (s, _) => GappedImageSegmenter.rectDistance(box, s._1) }.
+                  sortBy { case (s, _) => box.toRect.distance(s._1.toRect) }.
                   headOption
                 nearest match {
                   case Some(((nbox, nss), ni)) =>

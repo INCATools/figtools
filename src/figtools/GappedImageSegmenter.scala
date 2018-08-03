@@ -256,7 +256,20 @@ object GappedImageSegmenter {
     logger.info(s"building r-tree using ${segs.size} segs")
     var rtree = RTree.create[Segment,Rectangle]()
     for (seg <- segs) {
-      val overlaps = rtree.search(seg.segment.box.toRect).toBlocking.getIterator.asScala.toSeq
+      val overlaps = rtree.search(seg.segment.box.toRect).toBlocking.getIterator.asScala.filter{overlaps=>
+        val intersectionBox = ImageSegmenter.Box(
+          math.max(seg.segment.box.x, overlaps.value.segment.box.x),
+          math.max(seg.segment.box.y, overlaps.value.segment.box.y),
+          math.min(seg.segment.box.x2, overlaps.value.segment.box.x2),
+          math.min(seg.segment.box.y2, overlaps.value.segment.box.y2))
+        val intersectionArea =
+          (intersectionBox.x2 - intersectionBox.x) *
+            (intersectionBox.y2 - intersectionBox.y)
+        val minBoxArea = math.min(
+          (seg.segment.box.x2 - seg.segment.box.x) * (seg.segment.box.y2 - seg.segment.box.y),
+          (overlaps.value.segment.box.x2 - overlaps.value.segment.box.x) * (overlaps.value.segment.box.y2 - overlaps.value.segment.box.y))
+        intersectionArea.toDouble / minBoxArea.toDouble > MergeThreshold
+      }.toSeq
       // build a merged segment
       val merged = Segment(
         ImageSegment(seg.segment.imp,

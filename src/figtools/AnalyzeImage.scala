@@ -216,17 +216,17 @@ class AnalyzeImage(
               orderSegments(segments.map { s => ImageSegment(s.imp,
                 ImageSegmenter.Box(s.box.y, s.box.x, s.box.y2, s.box.x2)) }),
               orderSegments(segments.map { s => ImageSegment(s.imp,
-                ImageSegmenter.Box(xmax - s.box.x, s.box.y, xmax - s.box.x2, s.box.y2)) }),
+                ImageSegmenter.Box(xmax - s.box.x2, s.box.y, xmax - s.box.x, s.box.y2)) }),
               orderSegments(segments.map { s => ImageSegment(s.imp,
-                ImageSegmenter.Box(s.box.y, xmax - s.box.x, s.box.y2, xmax - s.box.x2)) }),
+                ImageSegmenter.Box(s.box.y, xmax - s.box.x2, s.box.y2, xmax - s.box.x)) }),
               orderSegments(segments.map { s => ImageSegment(s.imp,
-                ImageSegmenter.Box(s.box.x, ymax - s.box.y, s.box.x2, ymax - s.box.y2)) }),
+                ImageSegmenter.Box(s.box.x, ymax - s.box.y2, s.box.x2, ymax - s.box.y)) }),
               orderSegments(segments.map { s => ImageSegment(s.imp,
-                ImageSegmenter.Box(ymax - s.box.y, s.box.x, ymax - s.box.y2, s.box.x2)) }),
+                ImageSegmenter.Box(ymax - s.box.y2, s.box.x, ymax - s.box.y, s.box.x2)) }),
               orderSegments(segments.map { s => ImageSegment(s.imp,
-                ImageSegmenter.Box(xmax - s.box.x, ymax - s.box.y, xmax - s.box.x2, ymax - s.box.y2)) }),
+                ImageSegmenter.Box(xmax - s.box.x2, ymax - s.box.y2, xmax - s.box.x, ymax - s.box.y)) }),
               orderSegments(segments.map { s => ImageSegment(s.imp,
-                ImageSegmenter.Box(ymax - s.box.y, xmax - s.box.x, ymax - s.box.y2, xmax - s.box.x2)) })).zipWithIndex
+                ImageSegmenter.Box(ymax - s.box.y2, xmax - s.box.x2, ymax - s.box.y, xmax - s.box.x)) })).zipWithIndex
           } yield {
             // 3. add labels to unlabeled subpanels that need them
             @tailrec def

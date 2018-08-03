@@ -24,7 +24,6 @@ import scala.collection.mutable
 //   - check matching border colors
 class GappedImageSegmenter extends ImageSegmenter {
   import GappedImageSegmenter._
-  val logger = Logger(getClass.getSimpleName)
 
   override def segment(imp: ImagePlus): Seq[ImageSegment] = {
     val imp2 = imp.duplicate()
@@ -200,6 +199,7 @@ class GappedImageSegmenter extends ImageSegmenter {
 }
 
 object GappedImageSegmenter {
+  val logger = Logger(getClass.getSimpleName)
   val BinarizeThreshold = 0.95
   val ParticleThreshold = 20.0
   val largeParticleFilter = 0.9
@@ -210,25 +210,27 @@ object GappedImageSegmenter {
   val ContentDiff = 0.1
   val ContentMin = 0.01
 
-  def mergeOverlappingSegs(segments: Seq[ImageSegment]): Seq[ImageSegment] = {
+  def mergeOverlappingSegs(segments: Seq[ImageSegment], useThreshold: Boolean = true): Seq[ImageSegment] = {
     // start with an empty output r-tree
     var rtree = RTree.create[ImageSegment,Rectangle]()
     // iterate through all entries in the input r-tree
     for (seg <- segments) {
       // look for overlapping segments that overlap by at least MergeThreshold area amount
       val overlaps = rtree.search(seg.box.toRect).toBlocking.getIterator.asScala.filter{overlaps=>
-        val intersectionBox = ImageSegmenter.Box(
-          math.max(seg.box.x, overlaps.value.box.x),
-          math.max(seg.box.y, overlaps.value.box.y),
-          math.min(seg.box.x2, overlaps.value.box.x2),
-          math.min(seg.box.y2, overlaps.value.box.y2))
-        val intersectionArea =
-          (intersectionBox.x2 - intersectionBox.x) *
-            (intersectionBox.y2 - intersectionBox.y)
-        val minBoxArea = math.min(
-          (seg.box.x2 - seg.box.x) * (seg.box.y2 - seg.box.y),
-          (overlaps.value.box.x2 - overlaps.value.box.x) * (overlaps.value.box.y2 - overlaps.value.box.y))
-        intersectionArea.toDouble / minBoxArea.toDouble > MergeThreshold
+        !useThreshold || {
+          val intersectionBox = ImageSegmenter.Box(
+            math.max(seg.box.x, overlaps.value.box.x),
+            math.max(seg.box.y, overlaps.value.box.y),
+            math.min(seg.box.x2, overlaps.value.box.x2),
+            math.min(seg.box.y2, overlaps.value.box.y2))
+          val intersectionArea =
+            (intersectionBox.x2 - intersectionBox.x) *
+              (intersectionBox.y2 - intersectionBox.y)
+          val minBoxArea = math.min(
+            (seg.box.x2 - seg.box.x) * (seg.box.y2 - seg.box.y),
+            (overlaps.value.box.x2 - overlaps.value.box.x) * (overlaps.value.box.y2 - overlaps.value.box.y))
+          intersectionArea.toDouble / minBoxArea.toDouble > MergeThreshold
+        }
       }.toSeq
       // build a merged segment
       val merged = ImageSegment(seg.imp,
@@ -247,28 +249,60 @@ object GappedImageSegmenter {
 
 
   case class Segment(segment: ImageSegment, skip: Boolean)
-  case class SegPair(segment: Segment, nearest: Segment, distance: Double)
+  case class SegPair(distance: Double, segment: Segment, nearest: Segment)
+
   def recoverSmallComponents(segs: Seq[Segment]): Seq[Segment] = {
-    // build the r-tree
-    var rtree = RTree.create[Segment,Rectangle].
-      add(segs.map{s=>Entries.entry(s, s.segment.box.toRect)}.asJava)
-    // Get a sorted set of segment nearest-neighbor pairs
-    implicit def orderByDistance: Ordering[SegPair] = Ordering.by{_.distance}
-    val segpairs = mutable.SortedSet(
-      segs.filter{e=> !e.skip}.
+    // build the r-tree by merging all the overlapping components
+    logger.info(s"building r-tree using ${segs.size} segs")
+    var rtree = RTree.create[Segment,Rectangle]()
+    for (seg <- segs) {
+      val overlaps = rtree.search(seg.segment.box.toRect).toBlocking.getIterator.asScala.toSeq
+      // build a merged segment
+      val merged = Segment(
+        ImageSegment(seg.segment.imp,
+          ImageSegmenter.Box(
+            (Seq(seg.segment.box.x) ++ overlaps.map{_.value.segment.box.x}).min,
+            (Seq(seg.segment.box.y) ++ overlaps.map{_.value.segment.box.y}).min,
+            (Seq(seg.segment.box.x2) ++ overlaps.map{_.value.segment.box.x2}).max,
+            (Seq(seg.segment.box.y2) ++ overlaps.map{_.value.segment.box.y2}).max)),
+        seg.skip || overlaps.exists{_.value.skip})
+      // remove all the segments that go into the merged segment
+      rtree = rtree.delete(overlaps.asJava, true)
+      // add the merged segment
+      rtree = rtree.add(Entries.entry(merged, merged.segment.box.toRect))
+    }
+    logger.info(s"built r-tree with ${rtree.size} elements")
+
+    // define case class orderings for the sorted set
+    implicit def impOrder: Ordering[ImagePlus] =
+      Ordering.by(i => i.asInstanceOf[AnyRef].hashCode)
+    implicit def boxOrder: Ordering[ImageSegmenter.Box[Int]] =
+      Ordering.by(b => (b.x, b.x2, b.y, b.y2))
+    implicit def imageSegOrder: Ordering[ImageSegment] =
+      Ordering.by(i => (i.imp, i.box))
+    implicit def segOrder: Ordering[Segment] =
+      Ordering.by(s => (s.segment, s.skip))
+    implicit def segPairOrder: Ordering[SegPair] =
+      Ordering.by(p => (p.distance, p.segment, p.nearest))
+    logger.info(s"building pairlist")
+    val pairlist = rtree.entries.toBlocking.getIterator.asScala.map{_.value}.filter{e=> !e.skip}.
         flatMap(entry=>{
           val nearest = rtree.nearest(entry.segment.box.toRect, Double.MaxValue, 2).
             filter{e=>e.value.segment != entry.segment}.
             toBlocking.getIterator.asScala.toSeq.headOption
           if (nearest.isEmpty) None else Some(SegPair(
+            entry.segment.box.toRect.distance(nearest.get.geometry()),
             entry,
-            nearest.get.value,
-            entry.segment.box.toRect.distance(nearest.get.geometry())))
-        }): _*)
+            nearest.get.value))
+        }).toSeq
+    logger.info(s"building sorted set")
+    val segpairs = mutable.SortedSet[SegPair](pairlist: _*)
 
     // keep an index of segment -> segpair
+    logger.info(s"building segIndex")
     val segIndex = mutable.Map[Segment,SegPair](segpairs.map{p=>p.segment->p}.toSeq: _*)
     // keep an index of neighbor -> segpairs
+    logger.info(s"building nearestIndex")
     val nearestIndex = new mutable.HashMap[Segment, mutable.Set[SegPair]] with mutable.MultiMap[Segment, SegPair]
     segpairs.foreach{p=>
       nearestIndex.addBinding(p.nearest, p)
@@ -276,8 +310,10 @@ object GappedImageSegmenter {
     // process all the segpairs
     while (segpairs.nonEmpty) {
       // pop the first pair from the set
+      logger.info(s"before number of pairs to merge: ${segpairs.size}")
       val pair = segpairs.head
       segpairs -= pair
+      logger.info(s"after number of pairs to merge: ${segpairs.size}")
       // merge the pair's boxes
       val box = ImageSegmenter.Box(
         math.min(pair.segment.segment.box.x, pair.nearest.segment.box.x),
@@ -285,40 +321,54 @@ object GappedImageSegmenter {
         math.max(pair.segment.segment.box.x2, pair.nearest.segment.box.x2),
         math.max(pair.segment.segment.box.y2, pair.nearest.segment.box.y2))
       // get the set of r-tree entries that will be merged by joining this segpair
+      logger.info(s"getting toMerge")
       val toMerge = rtree.search(box.toRect).toBlocking.getIterator.asScala.map{_.value}.toSeq
+      logger.info(s"toMerge found ${toMerge.size} segments")
       // create the merged segment
       val mergedSegment = Segment(ImageSegment(pair.segment.segment.imp, box), toMerge.exists{_.skip})
+      logger.info(s"delete rtree entries")
       // remove the r-tree entries that we are mergning
       rtree = rtree.delete(toMerge.map{tm=>Entries.entry(tm, tm.segment.box.toRect)}.asJava, true)
       // add the newly merged r-tree entry
+      logger.info(s"add merged rtree entry")
       rtree = rtree.add(Entries.entry(mergedSegment, box.toRect))
       // remove the merged segments from the segpairs set
+      logger.info(s"remove merged entries from segpairs")
       segpairs --= toMerge.flatMap{tm=>segIndex.get(tm)}
+      logger.info(s"remove merged entries from segIndex")
       segIndex --= toMerge
+      logger.info(s"update ${toMerge.size+1} entries")
       // update nearest neighbors for the new merged segment pair and any existing segment pairs
-      for {sp <- Seq(SegPair(mergedSegment, mergedSegment, 0)) ++
+      for {sp <- Seq(SegPair(0, mergedSegment, mergedSegment)) ++
         toMerge.flatMap { tm =>
           val ni = nearestIndex.get(tm)
           if (ni.nonEmpty) ni.get else Seq()
         }
       } {
+        //logger.info(s"update - remove segpairs")
         segpairs -= sp
+        //logger.info(s"update - remove nearestIndex")
         nearestIndex -= sp.nearest
+        //logger.info(s"update - get nearest neighbor")
         rtree.nearest(mergedSegment.segment.box.toRect, Double.MaxValue, 2).
           filter{e=>e.value.segment != mergedSegment.segment}.
           toBlocking.getIterator.asScala.toSeq.headOption.foreach{nearest=>
+          //logger.info(s"update - add segPairs")
           val updatedSp = SegPair(
+            sp.segment.segment.box.toRect.distance(nearest.geometry()),
             sp.segment,
-            nearest.value,
-            sp.segment.segment.box.toRect.distance(nearest.geometry()))
+            nearest.value)
           segpairs += updatedSp
+          //logger.info(s"update - add segIndex")
           segIndex += sp.segment->updatedSp
+          //logger.info(s"update - add nearestIndex")
           nearestIndex.addBinding(nearest.value, updatedSp)
         }
       }
+      logger.info(s"updated ${toMerge.size+1} entries")
     }
     // return the remaining r-tree entries
+    logger.info(s"return r-tree entries")
     rtree.entries.toBlocking.getIterator.asScala.map{_.value}.toSeq
   }
-
 }

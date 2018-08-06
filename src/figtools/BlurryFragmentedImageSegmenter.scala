@@ -6,6 +6,7 @@ import ImageLog.log
 import com.typesafe.scalalogging.Logger
 
 import scala.util.control.Breaks._
+import de.sciss.equal.Implicits._
 
 class BlurryFragmentedImageSegmenter extends ImageSegmenter {
   val logger = Logger(getClass.getSimpleName)
@@ -22,7 +23,7 @@ class BlurryFragmentedImageSegmenter extends ImageSegmenter {
       var lastRow = -1
       breakable {
         for (x <- 0 until edgeImage.getWidth) {
-          if (edgeImage.getProcessor.getPixel(x, y) != 0) {
+          if (edgeImage.getProcessor.getPixel(x, y) !== 0) {
             if (lastRow >= 0) {
               val gapSize = x-lastRow
               if (minGapSize.isEmpty || minGapSize.get > gapSize) minGapSize = Some(gapSize)
@@ -31,14 +32,14 @@ class BlurryFragmentedImageSegmenter extends ImageSegmenter {
             break
           }
         }
-        if (lastRow == -1) lastRow = y
+        if (lastRow === -1) lastRow = y
       }
     }
     for (x <- 0 until edgeImage.getWidth) {
       var lastCol = -1
       breakable {
         for (y <- 0 until edgeImage.getHeight) {
-          if (edgeImage.getProcessor.getPixel(x, y) != 0) {
+          if (edgeImage.getProcessor.getPixel(x, y) !== 0) {
             if (lastCol >= 0) {
               val gapSize = x-lastCol
               if (minGapSize.isEmpty || minGapSize.get > gapSize) minGapSize = Some(gapSize)
@@ -47,7 +48,7 @@ class BlurryFragmentedImageSegmenter extends ImageSegmenter {
             break
           }
         }
-        if (lastCol == -1) lastCol = x
+        if (lastCol === -1) lastCol = x
       }
     }
 

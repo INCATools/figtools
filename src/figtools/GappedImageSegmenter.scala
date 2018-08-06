@@ -14,6 +14,7 @@ import com.github.davidmoten.rtree.geometry.Rectangle
 import ij.gui.Roi
 
 import scala.collection.JavaConverters._
+import de.sciss.equal.Implicits._
 
 import scala.collection.mutable
 
@@ -301,7 +302,7 @@ object GappedImageSegmenter {
     val pairlist = rtree.entries.toBlocking.getIterator.asScala.map{_.value}.filter{e=> !e.skip}.
         flatMap(entry=>{
           val nearest = rtree.nearest(entry.segment.box.toRect, Double.MaxValue, 2).
-            filter{e=>e.value.segment != entry.segment}.
+            filter{e=> e.value.segment !== entry.segment }.
             toBlocking.getIterator.asScala.toSeq.headOption
           if (nearest.isEmpty) None else Some(SegPair(
             entry.segment.box.toRect.distance(nearest.get.geometry()),
@@ -335,16 +336,20 @@ object GappedImageSegmenter {
         math.max(pair.segment.segment.box.y2, pair.nearest.segment.box.y2))
       // get the set of r-tree entries that will be merged by joining this segpair
       logger.info(s"getting toMerge")
+      // TODO: Why does rtree.search not return both items from pair???
       val toMerge = rtree.search(box.toRect).toBlocking.getIterator.asScala.map{_.value}.toSeq
-      logger.info(s"toMerge found ${toMerge.size} segments")
+      if (toMerge.size === 1) {
+        logger.info(s"toMerge found ${toMerge.size} segments: $toMerge")
+      }
       // create the merged segment
       val mergedSegment = Segment(ImageSegment(pair.segment.segment.imp, box), toMerge.exists{_.skip})
-      logger.info(s"delete rtree entries")
+      logger.info(s"delete rtree entries: size is ${rtree.size}")
       // remove the r-tree entries that we are mergning
       rtree = rtree.delete(toMerge.map{tm=>Entries.entry(tm, tm.segment.box.toRect)}.asJava, true)
+      logger.info(s"deleted rtree entries: size is ${rtree.size}")
       // add the newly merged r-tree entry
-      logger.info(s"add merged rtree entry")
       rtree = rtree.add(Entries.entry(mergedSegment, box.toRect))
+      logger.info(s"added merged rtree entry: size is ${rtree.size}")
       // remove the merged segments from the segpairs set
       logger.info(s"remove merged entries from segpairs")
       segpairs --= toMerge.flatMap{tm=>segIndex.get(tm)}
@@ -363,10 +368,15 @@ object GappedImageSegmenter {
         //logger.info(s"update - remove nearestIndex")
         nearestIndex -= sp.nearest
         //logger.info(s"update - get nearest neighbor")
-        rtree.nearest(mergedSegment.segment.box.toRect, Double.MaxValue, 2).
-          filter{e=>e.value.segment != mergedSegment.segment}.
+        rtree.nearest(sp.segment.segment.box.toRect, Double.MaxValue, 2).
+          filter{e=>e.value.segment !== sp.segment.segment}.
           toBlocking.getIterator.asScala.toSeq.headOption.foreach{nearest=>
           //logger.info(s"update - add segPairs")
+          if (sp.segment.segment.box.x === nearest.value.segment.box.x &&
+            sp.segment.segment.box.x2 === nearest.value.segment.box.x2 &&
+            sp.segment.segment.box.y === nearest.value.segment.box.y &&
+            sp.segment.segment.box.y2 === nearest.value.segment.box.y2)
+            logger.info(s"weird equality: ${sp.segment} == ${nearest.value}")
           val updatedSp = SegPair(
             sp.segment.segment.box.toRect.distance(nearest.geometry()),
             sp.segment,

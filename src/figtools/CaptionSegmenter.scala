@@ -9,6 +9,7 @@ import scala.util.matching.Regex
 import com.typesafe.scalalogging.Logger
 
 import scala.collection.immutable
+import de.sciss.equal.Implicits._
 
 object CaptionSegmenter {
   val logger = Logger(getClass.getSimpleName)
@@ -70,7 +71,7 @@ object CaptionSegmenter {
       for (value <- label.labelType.labelValues.values) {
         val lv = value match {
           case LabelValue.Range(start, stop) =>
-            if (start.seriesType == stop.seriesType)
+            if (start.seriesType === stop.seriesType)
               makeSeries(start, stop)
             else Seq(start, stop)
           case v@LabelValue.Value(_,_) => Seq(v)
@@ -98,7 +99,7 @@ object CaptionSegmenter {
         val (labelValue, _) = sortedLabelValues(i)
         val (next, _) = sortedLabelValues(i+1)
         for {index <- getIndex(labelValue.value, seriesType)} {
-          if (i == 0 && index != 0) score -= index*5
+          if (i === 0 && (index !== 0)) score -= index*5
           for {nextIndex <- getIndex(next.value, seriesType)} {
             if (index+1 == nextIndex) score += 5
           }
@@ -113,7 +114,7 @@ object CaptionSegmenter {
           if (i < labelValues.size-1) {
             val (next, _) = labelValues(i+1)
             for {nextIndex <- getIndex(next.value, seriesType)} {
-              if (index+1 == nextIndex) score += 10
+              if (index+1 === nextIndex) score += 10
             }
           }
         }

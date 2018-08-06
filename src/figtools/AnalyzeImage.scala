@@ -30,12 +30,13 @@ import ij.plugin.frame.RoiManager
 
 import scala.collection.mutable
 import scala.annotation.tailrec
+import de.sciss.equal.Implicits._
 
-class AnalyzeImage(
-                    edgeDetector: String = "imagej",
-                    pdfExportResolution: Int = 300,
-                    dir: File = file".",
-                    ids: Seq[String])
+class AnalyzeImage
+( edgeDetector: String = "imagej",
+  pdfExportResolution: Int = 300,
+  dir: File = file".",
+  ids: Seq[String])
 {
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
   val logger = Logger(getClass.getSimpleName)
@@ -58,7 +59,7 @@ class AnalyzeImage(
     val iter = if (ids.nonEmpty)
       ids.iterator.flatMap{i=>(dir / i).listRecursively}
     else dir.listRecursively
-    for (datapackage <- iter.filter(_.name == "datapackage.json")) {
+    for (datapackage <- iter.filter(_.name === "datapackage.json")) {
       val id = datapackage.parent.toString
       val json = Zeison.parse(datapackage.contentAsString)
       val description_nohtml = json.description_nohtml.toStr
@@ -88,11 +89,11 @@ class AnalyzeImage(
           val imageFiles = ArrayBuffer(imageFile)
           if (imageFile.exists) {
             // use the convert command-line tool to convert PDF files to image files
-            if (imageFile.extension.isDefined && imageFile.extension.get.toLowerCase == ".pdf") {
+            if (imageFile.extension.isDefined && imageFile.extension.get.toLowerCase === ".pdf") {
               imageFiles.clear()
               val cmd = Seq("convert", "-density", pdfExportResolution.toString, imageFile.toString, s"$imageFile.png")
               val status = cmd.!
-              if (status != 0) {
+              if (status !== 0) {
                 throw new RuntimeException(s"Command $cmd returned exit status $status")
               }
               val pngs = datapackage.parent.glob("*.png")
@@ -131,7 +132,7 @@ class AnalyzeImage(
           IJ.redirectErrorMessages(true)
           logger.info(s"Opening image file $imageFileName")
           val imp = new Opener().openImage(imageFileName)
-          if (imp == null) {
+          if (imp === null) {
             logger.warn(s"Could not open image file $imageFile, skipping")
             break
           }
@@ -249,12 +250,12 @@ class AnalyzeImage(
                 val foundCaptions = segmentDescriptions.values.flatten.map {
                   _.label
                 }.toSet
-                val firstLabelIdx = captions.indexWhere(_ == firstLabel)
-                val lastLabelIdx = captions.indexWhere(_ == lastLabel)
+                val firstLabelIdx = captions.indexWhere(_ === firstLabel)
+                val lastLabelIdx = captions.indexWhere(_ === lastLabel)
                 val missingCaptions =
                   (if (firstLabelIdx > 0 && lastLabelIdx > 0 && firstLabelIdx < lastLabelIdx)
-                    captions.span { _ != firstLabel }._2.span { _ != lastLabel }._1.drop(1)
-                  else captions.span { _ != lastLabel }._2.span { _ != firstLabel }._1.drop(1)).
+                    captions.span { _ !== firstLabel }._2.span { _ !== lastLabel }._1.drop(1)
+                  else captions.span { _ !== lastLabel }._2.span { _ !== firstLabel }._1.drop(1)).
                     filter { l => !foundCaptions.contains(l) }
 
                 segmentDescriptions ++ unlabeled.zipWithIndex.flatMap { case (ui, uii) =>
@@ -279,7 +280,7 @@ class AnalyzeImage(
             for ((sdo, i) <- segDescrOrder.zipWithIndex) {
               if (i < segDescrOrder.length - 1) {
                 val next = segDescrOrder(i + 1)
-                if (next - sdo == 1) score += 1000
+                if (next - sdo === 1) score += 1000
                 else if (next - sdo > 0) score += 100
               }
             }
@@ -296,14 +297,14 @@ class AnalyzeImage(
             unlabeled match {
               case Some(((box, ss), i)) =>
                 val nearest = segments.zipWithIndex.
-                  filter { case (_, ni) => i != ni }.
+                  filter { case (_, ni) => i !== ni }.
                   sortBy { case (s, _) => box.toRect.distance(s._1.toRect) }.
                   headOption
                 nearest match {
                   case Some(((nbox, nss), ni)) =>
                     mergeSegments(
                       segments.zipWithIndex.
-                        filter { case (_, mi) => mi != i && mi != ni }.
+                        filter { case (_, mi) => (mi !== i) && (mi !== ni) }.
                         map { _._1 } ++
                         Seq((
                           ImageSegmenter.Box(
@@ -377,7 +378,7 @@ class AnalyzeImage(
             (first._1.box.y + 0.1 * (first._1.box.y2 - first._1.box.y + 1)).asInstanceOf[Float],
             first._1.box.x2,
             (first._1.box.y2 - 0.1 * (first._1.box.y2 - first._1.box.y + 1)).asInstanceOf[Float])).
-          toBlocking.getIterator.asScala.filter{e=>e.value._2 != first._2}.toSeq
+          toBlocking.getIterator.asScala.filter{e=>e.value._2 !== first._2}.toSeq
         if (rowSearch.nonEmpty) {
           val nearest = rowSearch.minBy{e=> e.geometry().distance(first._1.box.toRect) }
           ordered += nearest.value._2

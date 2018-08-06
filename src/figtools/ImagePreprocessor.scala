@@ -6,6 +6,7 @@ import ImageLog.log
 
 import scala.collection.mutable
 import scala.util.control.Breaks._
+import de.sciss.equal.Implicits._
 
 class ImagePreprocessor {
   def preprocess(imp: ImagePlus): ImagePlus = {
@@ -83,14 +84,14 @@ class ImagePreprocessor {
         breakable {
           for (y <- y1 until y2) {
             val value = imp.getPixel(x1, y)(0)
-            if (value == gapColor) {
+            if (value === gapColor) {
               x1 += 1
               gapValues += 1
               break
             }
           }
         }
-        if (gapValues == 0) {
+        if (gapValues === 0) {
           cropX1 = x1
         }
       }
@@ -99,14 +100,14 @@ class ImagePreprocessor {
         breakable {
           for (y <- y1 until y2) {
             val value = imp.getPixel(x2, y)(0)
-            if (value == gapColor) {
+            if (value === gapColor) {
               x2 -= 1
               gapValues += 1
               break
             }
           }
         }
-        if (gapValues == 0) {
+        if (gapValues === 0) {
           cropX2 = x2
         }
       }
@@ -115,14 +116,14 @@ class ImagePreprocessor {
         breakable {
           for (x <- x1 until x2) {
             val value = imp.getPixel(x, y1)(0)
-            if (value == gapColor) {
+            if (value === gapColor) {
               y1 += 1
               gapValues += 1
               break
             }
           }
         }
-        if (gapValues == 0) {
+        if (gapValues === 0) {
           cropY1 = y1
         }
       }
@@ -131,14 +132,14 @@ class ImagePreprocessor {
         breakable {
           for (x <- x1 until x2) {
             val value = imp.getPixel(x, y2)(0)
-            if (value == gapColor) {
+            if (value === gapColor) {
               y2 -= 1
               gapValues += 1
               break
             }
           }
         }
-        if (gapValues == 0) {
+        if (gapValues === 0) {
           cropY2 = y2
         }
       }
@@ -155,7 +156,7 @@ class ImagePreprocessor {
 
   def cropImageBorders(imp: ImagePlus, gapColor: Int): Option[ImagePlus] = {
     val roi = findImageBorders(imp, gapColor)
-    if (roi == ImageSegmenter.Box(0, 0, imp.getWidth-1, imp.getHeight-1)) {
+    if (roi === ImageSegmenter.Box(0, 0, imp.getWidth-1, imp.getHeight-1)) {
       None
     }
     else {

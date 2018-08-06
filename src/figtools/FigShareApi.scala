@@ -5,6 +5,7 @@ import com.softwaremill.sttp._
 import com.softwaremill.sttp.HttpURLConnectionBackend
 import org.tsers.zeison.Zeison
 import org.tsers.zeison.Zeison.{JUndefined, JValue}
+import de.sciss.equal.Implicits._
 
 import scala.annotation.tailrec
 
@@ -17,7 +18,7 @@ class FigShareApi(url: String = "http://api.figshare.com/v1", raw: Boolean = fal
     if (response.body.isLeft) throw new RuntimeException(response.body.left.get)
     val body = response.body.right.get
     val data = Zeison.parse(body)
-    if (data("count").toInt == 0) throw new RuntimeException(s"Article not found with id $id")
+    if (data("count").toInt === 0) throw new RuntimeException(s"Article not found with id $id")
     if (data("count").toInt > 1) throw new RuntimeException(s"More than one article found with id $id")
     data.items(0)
   }

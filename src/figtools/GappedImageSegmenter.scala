@@ -8,7 +8,7 @@ import ij.measure.ResultsTable
 import ij.plugin.filter.ParticleAnalyzer
 
 import scala.collection.mutable.ArrayBuffer
-import ImageLog.log
+import ImageLog.{log, logStep}
 import com.github.davidmoten.rtree.{Entries, RTree}
 import com.github.davidmoten.rtree.geometry.Rectangle
 import ij.gui.Roi
@@ -183,10 +183,16 @@ class GappedImageSegmenter extends ImageSegmenter {
     }
 
     // run small components recovery step
+    log(imp2, "[GappedImageSegmenter] recover small components, segs",
+      segs.map{s=>s.box.toRoi}: _*)
+    log(imp2, "[GappedImageSegmenter] recover small components, smaller",
+      smaller.map{s=>s.box.toRoi}: _*)
+    log(imp2, "[GappedImageSegmenter] recover small components, smalleSegs",
+      smallSegs.map{s=>s.box.toRoi}: _*)
     val toRecover = segs.map{s=>GappedImageSegmenter.Segment(s, skip=true)} ++
       (smaller ++ smallSegs).map{s=>GappedImageSegmenter.Segment(s,skip=false)}
     logger.info(s"Running recover small components step")
-    val recovered = recoverSmallComponents(toRecover)
+    val recovered = recoverSmallComponents(imp2, toRecover)
     logger.info(s"Finished running recover small components step")
 
     log(imp2, "[GappedImageSegmenter] recover small components",
@@ -254,7 +260,7 @@ object GappedImageSegmenter {
   case class Segment(segment: ImageSegment, skip: Boolean)
   case class SegPair(segment: Segment, nearest: Segment)
 
-  def recoverSmallComponents(segs: Seq[Segment]): Seq[Segment] = {
+  def recoverSmallComponents(imp: ImagePlus, segs: Seq[Segment]): Seq[Segment] = {
     // build the r-tree by merging all the overlapping components
     logger.info(s"building merged r-tree using ${segs.size} segs")
     var rtree = RTree.create[Segment,Rectangle]()
@@ -341,11 +347,7 @@ object GappedImageSegmenter {
         math.max(pair.segment.segment.box.x2, pair.nearest.segment.box.x2),
         math.max(pair.segment.segment.box.y2, pair.nearest.segment.box.y2))
       // get the set of r-tree entries that will be merged by joining this segpair
-      // TODO: Why does rtree.search not return both items from pair???
-      val toMerge = rtree.search(box.toRect).toBlocking.getIterator.asScala.map{_.value}.toSeq
-      if (toMerge.size === 1) {
-        logger.info(s"toMerge only found 1 segment!!!: ${pp(toMerge)}")
-      }
+      val toMerge = Seq(pair.segment, pair.nearest)
       // create the merged segment
       val mergedSegment = Segment(ImageSegment(pair.segment.segment.imp, box), toMerge.exists{_.skip})
       // delete the to-be-merged segments from rtree, segpairs, and segindex
@@ -390,6 +392,8 @@ object GappedImageSegmenter {
           }
         }
       }
+      //val rois = rtree.entries.toBlocking.getIterator.asScala.map{_.value.segment.box.toRoi}.toSeq
+      //logStep(imp, s"[GappedImageSegmenter] recover small components step, rois.size=${rois.size}", rois: _*)
     }
     // return the remaining r-tree entries
     logger.info(s"return r-tree entries")

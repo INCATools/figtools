@@ -57,7 +57,6 @@ object CaptionSegmenter {
     val labels = ArrayBuffer[Label]()
     var i=0
     while (i < caption.length) {
-      val substr = caption.substring(i)
       val result = labelParser.parse(caption, index=i)
       result match {
         case Parsed.Success(value, idx) =>

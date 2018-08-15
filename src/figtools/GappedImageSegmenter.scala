@@ -19,8 +19,6 @@ import de.sciss.equal.Implicits._
 import scala.collection.mutable
 
 // TODO:
-// - fix recover small components - make sure it gets added to closest actual ROI, not box
-// - recover missing panels
 //   - look at overlapping missing panels to determine proper spacing
 //   - check matching border colors
 class GappedImageSegmenter extends ImageSegmenter {

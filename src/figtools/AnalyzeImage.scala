@@ -114,7 +114,7 @@ class AnalyzeImage
             break
           }
 
-          // TODO: handle checking multiple caption groups, not just the first one
+          // TODO: handle checking multiple caption groups, not just the highest-scoring one
           val captionGroups = CaptionSegmenter.segmentCaption(description_nohtml).take(1)
           logger.info(s"captionGroups=${pp(captionGroups)}")
           val hasCaptions = captionGroups.
@@ -156,16 +156,16 @@ class AnalyzeImage
             //log(new ImagePlus(cropped.getTitle,bi), s"[FigTools] bufferedImage seg${i+1}")
             val words = instance.getWords(bi, TessPageIteratorLevel.RIL_WORD).asScala.
               sortBy(x => (-(x.getBoundingBox.width * x.getBoundingBox.height), -x.getConfidence))
-            log(new ImagePlus(cropped.getTitle, bi),
-              s"[AnalyzeImage] Run tesseract OCR on seg${i + 1} (segment only)",
-              words.map { w =>
-                w.getText -> new Roi(
-                  w.getBoundingBox.x,
-                  w.getBoundingBox.y,
-                  w.getBoundingBox.width,
-                  w.getBoundingBox.height)
-              }: _*)
-            logger.info(s"seg${i + 1} words: ${pprint.apply(words, height = 9999999)}")
+            // log(new ImagePlus(cropped.getTitle, bi),
+            //   s"[AnalyzeImage] Run tesseract OCR on seg${i + 1} (segment only)",
+            //   words.map { w =>
+            //     w.getText -> new Roi(
+            //       w.getBoundingBox.x,
+            //       w.getBoundingBox.y,
+            //       w.getBoundingBox.width,
+            //       w.getBoundingBox.height)
+            //   }: _*)
+            logger.info(s"seg${i + 1} words: ${pp(words)}")
             log(imp, s"[FigTools] Run tesseract OCR on seg${i + 1} (overview)",
               Seq(s"seg${i + 1}" -> segment.box.toRoi) ++
                 words.map { w =>
@@ -180,7 +180,7 @@ class AnalyzeImage
               val confidence = word.getConfidence
               val text = word.getText
               val captionGroups = CaptionSegmenter.segmentCaption(text)
-              logger.info(s"Tesseract OCR seg${i + 1} text: (box: ${pp((box.x, box.y, box.width, box.height))}, confidence: ${pp(confidence)}='${pp(text)}'")
+              logger.info(s"Tesseract OCR seg${i + 1} text: (box: ${pp((box.x, box.y, box.width, box.height))}, confidence: ${pp(confidence)}, text: ${pp(text)}, captionGroups: ${pp(captionGroups)}")
               for {
                 captionGroup <- captionGroups
                 caption <- captionGroup.captions
@@ -342,11 +342,9 @@ class AnalyzeImage
           }
           log(imp, "[FigTools] Show caption labels", captionLabels: _*)
           logger.info(s"captionGroups=${pp(captionGroups)}")
-          logger.info(s"segmentDescription=${
-            pp(bestFixedSegDescrs.map{case (_,d)=>
-              d.map{d=>(s"seg${d.segIndex+1}",d.label,d.word)}.mkString("\n")
-            })
-          }")
+          logger.info(s"bestFixedSegDescrs=${pp(bestFixedSegDescrs)}")
+
+          logger.info(s"Please close current image window to load next image...")
 
           // wait for user to close the image
           while (WindowManager.getWindowCount > 0) Thread.sleep(200)

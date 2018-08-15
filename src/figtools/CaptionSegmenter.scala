@@ -5,7 +5,6 @@ import fastparse.all._
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
-import scala.util.matching.Regex
 import com.typesafe.scalalogging.Logger
 
 import scala.collection.immutable
@@ -23,10 +22,12 @@ object CaptionSegmenter {
     //val romanUpper = P(CharIn(RomanNumberConverter.toArabic.keys.toList))
     //val romanLower = P(CharIn(RomanNumberConverter.toArabic.keys.map(_.toLower).toList))
     val whitespace = P(CharIn(Seq(' ', '\n', '\t', '\r')))
-    val label = P((
-      upper.rep(min = 1, max = 2).!.map(l=>LabelValue.Value(l.mkString(""), SeriesType.AlphaUpper)) |
-        lower.rep(min = 1, max = 2).!.map(l=>LabelValue.Value(l.mkString(""), SeriesType.AlphaLower)) |
-        digits.rep(min = 1, max = 2).!.map(l=>LabelValue.Value(l.mkString(""), SeriesType.Numeric))) ~ ".".?)
+    val punctuation = P(CharIn(Seq('.',';',':','-',',')))
+
+    val label = P(
+      upper.rep(min=1, max=2).!.map(l=>LabelValue.Value(l.mkString(""), SeriesType.AlphaUpper)) |
+        lower.rep(min=1, max=2).!.map(l=>LabelValue.Value(l.mkString(""), SeriesType.AlphaLower)) |
+        digits.rep(min=1, max=2).!.map(l=>LabelValue.Value(l.mkString(""), SeriesType.Numeric)))
     val rangeDelim = P("-" | (whitespace.rep(1) ~ StringInIgnoreCase("to", "through", "until") ~ whitespace.rep(1)))
     val labelRange = P(whitespace.rep ~ (label ~ (rangeDelim ~ label).?).map{
       case (start: LabelValue.Value, stop: Option[LabelValue.Value])=>
@@ -41,32 +42,38 @@ object CaptionSegmenter {
       case (panelDescription: Option[String], labelRange: LabelValue, labelRanges: Seq[LabelValue]) =>
         LabelValues(labelRange +: labelRanges, panelDescription)
     })
-    val paren = P((labelRanges ~ ")").map(LabelType(_, ParensType.Round, EnclosureType.HalfOpen)))
+    val openStart = P(Start | (punctuation ~ whitespace.rep(min=1)))
+    val openEnd = P(&(End | punctuation))
+    val open = P(openStart ~ labelRanges.map(LabelType(_, ParensType.None, EnclosureType.Open)) ~ openEnd)
+    val paren = P((openStart ~ labelRanges ~ ")").map(LabelType(_, ParensType.Round, EnclosureType.HalfOpen)))
     val parens = P(("(" ~ labelRanges ~ ")").map(LabelType(_, ParensType.Round, EnclosureType.Closed)))
-    val blockParen = P((labelRanges ~ "]").map(LabelType(_, ParensType.Square, EnclosureType.HalfOpen)))
+    val blockParen = P((openStart ~ labelRanges ~ "]").map(LabelType(_, ParensType.Square, EnclosureType.HalfOpen)))
     val blockParens = P(("[" ~ labelRanges ~ "]").map(LabelType(_, ParensType.Square, EnclosureType.Closed)))
-    val curlyParen = P((labelRanges ~ "}").map(LabelType(_, ParensType.Curly, EnclosureType.HalfOpen)))
+    val curlyParen = P((openStart ~ labelRanges ~ "}").map(LabelType(_, ParensType.Curly, EnclosureType.HalfOpen)))
     val curlyParens = P(("{" ~ labelRanges ~ "}").map(LabelType(_, ParensType.Curly, EnclosureType.Closed)))
-    val open = P(labelRanges.map(LabelType(_, ParensType.None, EnclosureType.Open)))
     val labelParser = P(parens | blockParens | curlyParens | paren | blockParen | curlyParen | open)
 
     // parse the caption labels
-    var labels = ArrayBuffer[Label]()
-    for (m <- """\([^\)]*?\)|\[[^\]]*?\]|\{[^\}]*?\}|(^|(?<=[.;,:-]\s{1,4}))[^\(\[\{\s]\S*[\]\}\).]""".r.findAllMatchIn(caption)) {
-      val result = labelParser.parse(m.group(0))
+    val labels = ArrayBuffer[Label]()
+    var i=0
+    while (i < caption.length) {
+      val substr = caption.substring(i)
+      val result = labelParser.parse(caption, index=i)
       result match {
-        case Parsed.Success(value, _) =>
-          val label = Label(value, m, labels.length)
+        case Parsed.Success(value, idx) =>
+          val label = Label(value, i, idx, caption.substring(i, idx), labels.length)
           labels += label
           logger.debug(s"label=${pp(label)}")
-        case Parsed.Failure(_, _, _) => ()
+          i = idx
+        case Parsed.Failure(_, _, _) =>
+          i += 1
       }
     }
 
     // flatten out the labels
     val labelValues = ArrayBuffer[(LabelValue.Value, Label)]()
     val label2Values = mutable.Map[Label,Seq[LabelValue.Value]]()
-    for ((label, i) <- labels.zipWithIndex) {
+    for ((label, _) <- labels.zipWithIndex) {
       val labelVals = ArrayBuffer[LabelValue.Value]()
       for (value <- label.labelType.labelValues.values) {
         val lv = value match {
@@ -125,7 +132,7 @@ object CaptionSegmenter {
 
     // Try to determine if the description precedes or follows the label caption
     // TODO: improve this?
-    val findAfter = labels.lastOption.flatMap(l=>"""^\s*$""".r.findFirstMatchIn(caption.slice(l.regexMatch.end, caption.length))).isEmpty
+    val findAfter = labels.lastOption.flatMap(l=>"""^\s*$""".r.findFirstMatchIn(caption.slice(l.matchEnd, caption.length))).isEmpty
 
     val seenLabels = mutable.Set[Label]()
     val captionGroups = ArrayBuffer[CaptionGroup]()
@@ -140,11 +147,11 @@ object CaptionSegmenter {
           val labelIndexes = label2Values(label).flatMap(l=>getIndex(l.value, set.seriesType))
 
           val description = if (findAfter) {
-            val next = if (i < set.labels.size - 1) set.labels(i + 1).regexMatch.start else caption.length
-            caption.slice(label.regexMatch.start, next)
+            val next = if (i < set.labels.size - 1) set.labels(i + 1).matchStart else caption.length
+            caption.slice(label.matchStart, next)
           } else {
-            val prev = if (i > 0) set.labels(i - 1).regexMatch.end else 0
-            caption.slice(prev, label.regexMatch.end)
+            val prev = if (i > 0) set.labels(i - 1).matchEnd else 0
+            caption.slice(prev, label.matchEnd)
           }
           captions += Caption(labelValues, labelIndexes, description)
         }
@@ -268,7 +275,9 @@ object CaptionSegmenter {
   }
 
   case class Label(labelType: LabelType,
-                   regexMatch: Regex.Match,
+                   matchStart: Int,
+                   matchEnd: Int,
+                   matchString: String,
                    labelIndex: Int)
 
   sealed abstract class LabelValue extends EnumEntry

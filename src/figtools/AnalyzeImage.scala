@@ -12,7 +12,7 @@ import sys.process._
 import collection.JavaConverters._
 import edu.stanford.nlp.util.logging.RedwoodConfiguration
 import figtools.ImageSegmenter.ImageSegment
-import ij.{IJ, ImageJ, ImagePlus, WindowManager}
+import ij.{IJ, ImageJ, WindowManager}
 import ij.io.Opener
 import net.sourceforge.tess4j.ITessAPI.TessPageIteratorLevel
 
@@ -28,7 +28,7 @@ import com.github.davidmoten.rtree.{Entries, RTree}
 import ij.gui.Roi
 import ij.plugin.frame.RoiManager
 
-import scala.collection.mutable
+import scala.collection.{SortedSet, mutable}
 import scala.annotation.tailrec
 import de.sciss.equal.Implicits._
 
@@ -41,7 +41,7 @@ class AnalyzeImage
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
   val logger = Logger(getClass.getSimpleName)
 
-  case class SegmentDescription(label: String, word: Option[Word], segIndex: Int)
+  case class SegmentDescription(label: String, labelIndex: Int, word: Option[Word], segIndex: Int)
 
   def analyze() {
     if (!FigTools.edgeDetectors.contains(edgeDetector)) {
@@ -141,7 +141,11 @@ class AnalyzeImage
           imp.setTitle(s"$id: ${imp.getTitle}")
           log(imp, "[AnalyzeImage] original image")
 
-          val segmentDescriptions = mutable.Map[Int, ArrayBuffer[SegmentDescription]]()
+
+          implicit def sdOrder: Ordering[SegmentDescription] =
+            Ordering.by(sd => (sd.segIndex, sd.labelIndex))
+
+          val segmentDescriptions = mutable.Map[Int, mutable.SortedSet[SegmentDescription]]()
 
           val segments = ImageSegmenter.segment(imp)
           log(imp, "[AnalyzeImage] split into segments",
@@ -185,13 +189,15 @@ class AnalyzeImage
               for {
                 captionGroup <- captionGroups
                 caption <- captionGroup.captions
-                label <- caption.label
+                i <- caption.label.indices
               } {
+                val label = caption.label(i)
+                val index = caption.index(i)
                 val ucLabel = label.toUpperCase
                 if (hasCaptions.contains(ucLabel)) {
                   logger.info(s"Assigning label $label to segment seg$i}")
-                  segmentDescriptions.getOrElseUpdate(i, ArrayBuffer()) +=
-                    SegmentDescription(ucLabel, Some(word), i)
+                  segmentDescriptions.getOrElseUpdate(i, mutable.SortedSet()) +=
+                    SegmentDescription(ucLabel, index, Some(word), i)
                 }
               }
             }
@@ -210,8 +216,7 @@ class AnalyzeImage
             zip(captionGroups.
               flatMap { cg => cg.captions }.
               flatMap { cs => cs.index }).
-            sortBy { case (_, i) => i }.
-            map { _._1 }
+            sortBy { case (_, i) => i }
           val (bestFixedSegDescrs, bestOrder, bestScore) = (for {
             (ordered, i) <- Seq(
               orderSegments(segments),
@@ -232,7 +237,7 @@ class AnalyzeImage
           } yield {
             val updatedSegDescs = findCaptions(orderedCaptions, ordered, segmentDescriptions)
 
-            val captionOrder = orderedCaptions.zipWithIndex.toMap
+            val captionOrder = orderedCaptions.map{_._1}.zipWithIndex.toMap
             val segDescrOrder = updatedSegDescs.toSeq.
               sortBy { _._1 }.
               flatMap { _._2 }.
@@ -325,45 +330,111 @@ class AnalyzeImage
     }
   }
 
+  implicit def sdOrder: Ordering[SegmentDescription] =
+    Ordering.by(sd => (sd.segIndex, sd.labelIndex))
+
   // 3. add labels to unlabeled subpanels that need them
-  @tailrec final def findCaptions
-  (captions: Seq[String],
-   ordered: Seq[Int],
-   segmentDescriptions: collection.Map[Int, Seq[SegmentDescription]]):
-  collection.Map[Int, Seq[SegmentDescription]] = {
-    val (firstLabeled, rest) = ordered.
-      span { i => segmentDescriptions.getOrElse(i, Seq()).nonEmpty }
-    val (unlabeled, rest2) = rest.
-      span { i => segmentDescriptions.getOrElse(i, Seq()).isEmpty }
-    val (lastLabeled, _) = rest2.
-      span { i => segmentDescriptions.getOrElse(i, Seq()).nonEmpty }
-    val updatedSegDescrs = if (unlabeled.nonEmpty) {
-      val firstLabel = firstLabeled.lastOption.
-        map { i => segmentDescriptions(i).map { s => s.label }.max }.getOrElse(captions.head)
-      val lastLabel = lastLabeled.headOption.
-        map { i => segmentDescriptions(i).map { s => s.label }.min }.getOrElse(captions.last)
+  // also, remove duplicate false positive labels
+  def findCaptions
+  ( // ordered sequence of (labels, labelIndexes) we expect to find
+    captions: Seq[(String, Int)],
+    // row/column ordering of segment indexes
+    ordered: Seq[Int],
+    // the set of labels found in each segment by the OCR, with duplicates
+    segmentDescriptions: collection.Map[Int, SortedSet[SegmentDescription]]):
+  // return segIndex -> set of SegmentDescription(label, labelIndex, word, segIndex)
+  collection.Map[Int, SortedSet[SegmentDescription]] = {
+    // span: returns a pair consisting of the longest prefix of this
+    // general collection whose elements all satisfy p, and the rest
+    // of this general collection.
+    val segmentOrder = ordered.zipWithIndex.map{case (i,j)=>i->j}.toMap
+    val seenLabel = mutable.Map[String, SegmentDescription]()
+    val labelAssignments = mutable.Map[Int, SortedSet[SegmentDescription]]()
+    var segments = ordered
+    while (segments.nonEmpty) {
+      // get the span of labeled segments
+      val (firstLabeled, rest) = segments.
+        span { i => segmentDescriptions.getOrElse(i, Seq()).nonEmpty }
+      // then get the next span of unlabeled segments
+      val (unlabeled, rest2) = rest.
+        span { i => segmentDescriptions.getOrElse(i, Seq()).isEmpty }
+      // then get the next span of labeled segments
+      val (lastLabeled, _) = rest2.
+        span { i => segmentDescriptions.getOrElse(i, Seq()).nonEmpty }
 
-      val foundCaptions = segmentDescriptions.values.flatten.map {
-        _.label
-      }.toSet
-      val firstLabelIdx = captions.indexWhere(_ === firstLabel)
-      val lastLabelIdx = captions.indexWhere(_ === lastLabel)
-      val missingCaptions =
-        (if (firstLabelIdx > 0 && lastLabelIdx > 0 && firstLabelIdx < lastLabelIdx)
-          captions.span { _ !== firstLabel }._2.span { _ !== lastLabel }._1.drop(1)
-        else captions.span { _ !== lastLabel }._2.span { _ !== firstLabel }._1.drop(1)).
-          filter { l => !foundCaptions.contains(l) }
+      // remove any duplicate impostor labels
+      for (i <- firstLabeled) {
+        val sds = segmentDescriptions.getOrElse(i, Seq())
+        for (sd <- sds) {
+          seenLabel.get(sd.label) match {
+            // is sd a more valid candidate than the existing ssd?
+            case Some(ssd) =>
+              // 1. ordering - in the same segment group
+              if (segmentOrder(sd.segIndex) <= segmentOrder(ssd.segIndex) &&
+                // 2. use OCR confidence
+                (sd.word.map{_.getConfidence}.getOrElse(0f) <
+                  ssd.word.map{_.getConfidence}.getOrElse(0f)) ||
+                // 3. if the label is the only label in a segment
+                labelAssignments.get(sd.segIndex).map{_.size}.getOrElse(0) <
+                  labelAssignments.get(ssd.segIndex).map{_.size}.getOrElse(0))
+              {
+                // remove the old label assignment
+                labelAssignments += ssd.segIndex->(labelAssignments.getOrElse(ssd.segIndex, SortedSet()) - ssd)
+                // add the new label assignment
+                labelAssignments += i->(labelAssignments.getOrElse(i, SortedSet()) + sd)
+                // overwrite the seenLabel entry
+                seenLabel += sd.label->sd
+              }
+            case None =>
+              // add new label assignment and seenLabel entry
+              labelAssignments += i->(labelAssignments.getOrElse(i, SortedSet()) + sd)
+              seenLabel += sd.label->sd
+          }
+        }
+      }
 
-      segmentDescriptions ++ unlabeled.zipWithIndex.flatMap { case (ui, uii) =>
-        val mc = missingCaptions.slice(
-          (uii.toDouble / unlabeled.size.toDouble * missingCaptions.size.toDouble).toInt,
-          ((uii + 1).toDouble / unlabeled.size.toDouble * missingCaptions.size.toDouble).toInt)
-        if (mc.nonEmpty)
-          Seq(ui -> mc.map { c => SegmentDescription(c, None, ui) })
-        else Seq()
-      }.toMap
-    } else segmentDescriptions
-    if (rest2.nonEmpty) findCaptions(captions, rest2, updatedSegDescrs) else updatedSegDescrs
+      // add interpolated missing segment labels
+      if (unlabeled.nonEmpty) {
+        // get the range to interpolate
+        val firstLabel = firstLabeled.lastOption.
+          map { i => segmentDescriptions(i).map { s => s.label }.max }.getOrElse(captions.head._1)
+        val lastLabel = lastLabeled.headOption.
+          map { i => segmentDescriptions(i).map { s => s.label }.min }.getOrElse(captions.last._1)
+
+        val firstLabelIdx = captions.indexWhere(_._1 === firstLabel)
+        val lastLabelIdx = captions.indexWhere(_._1 === lastLabel)
+        val missingCaptions =
+          if (firstLabelIdx > 0 && lastLabelIdx > 0 && firstLabelIdx < lastLabelIdx)
+            captions.span { _._1 !== firstLabel }._2.span { _._1 !== lastLabel }._1.drop(1)
+          else captions.span { _._1 !== lastLabel }._2.span { _._1 !== firstLabel }._1.drop(1)
+
+        // make missing captions
+        val interpolated = unlabeled.zipWithIndex.flatMap { case (ui, uii) =>
+          val mc = missingCaptions.slice(
+            (uii.toDouble / unlabeled.size.toDouble * missingCaptions.size.toDouble).toInt,
+            ((uii + 1).toDouble / unlabeled.size.toDouble * missingCaptions.size.toDouble).toInt)
+          if (mc.nonEmpty)
+            Seq(ui -> SortedSet(mc.map { c => SegmentDescription(c._1, c._2, None, ui) }: _*))
+          else Seq()
+        }.toMap
+        // make sure the missing captions should be used
+        // do not overwrite any existing captions
+        for {
+          (i,sds) <- interpolated
+          sd <- sds
+        } {
+          seenLabel.get(sd.label) match {
+            case Some(_) =>
+            case None =>
+              // add new label assignment and seenLabel entry
+              labelAssignments += i->(labelAssignments.getOrElse(i, SortedSet()) + sd)
+              seenLabel += sd.label->sd
+          }
+        }
+      }
+      segments = rest2
+    }
+    labelAssignments
   }
 
   // 1. group segments into rows/columns

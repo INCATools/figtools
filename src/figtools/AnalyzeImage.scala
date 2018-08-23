@@ -189,10 +189,10 @@ class AnalyzeImage
               for {
                 captionGroup <- captionGroups
                 caption <- captionGroup.captions
-                i <- caption.label.indices
+                li <- caption.label.indices
               } {
-                val label = caption.label(i)
-                val index = caption.index(i)
+                val label = caption.label(li)
+                val index = caption.index(li)
                 val ucLabel = label.toUpperCase
                 if (hasCaptions.contains(ucLabel)) {
                   logger.info(s"Assigning label $label to segment seg$i}")
@@ -260,8 +260,10 @@ class AnalyzeImage
             bestOrder.zipWithIndex.map{case (s,o)=> s"$o seg$s"->segments(s).box.toRoi}: _*)
 
           // 4. merge remaining unlabeled subpanels to nearest existing subpanels
-          @tailrec def mergeSegments(segments: Seq[(ImageSegmenter.Box[Int], Set[Int])])
-          : Seq[(ImageSegmenter.Box[Int], Set[Int])] = {
+          @tailrec def mergeSegments
+          (segments: Seq[(ImageSegmenter.Box[Int], Set[Int])]):
+          Seq[(ImageSegmenter.Box[Int], Set[Int])] =
+          {
             val unlabeled = segments.zipWithIndex.find { case ((_, ss), _) =>
               ss.forall { si => bestFixedSegDescrs.getOrElse(si, Seq()).isEmpty }
             }
@@ -372,7 +374,9 @@ class AnalyzeImage
               // 1. ordering - in the same segment group
               if (Ordering.by((s: SegmentDescription)=>(
                 segmentOrder(s.segIndex),
+                // 2. use OCR confidence
                 -s.word.map{_.getConfidence}.getOrElse(0f),
+                // 3. if the label is the only label in a segment
                 labelAssignments.get(s.segIndex).map{_.size}.getOrElse(0),
               )).compare(sd, ssd) < 0)
               {

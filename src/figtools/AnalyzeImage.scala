@@ -370,13 +370,11 @@ class AnalyzeImage
             // is sd a more valid candidate than the existing ssd?
             case Some(ssd) =>
               // 1. ordering - in the same segment group
-              if (segmentOrder(sd.segIndex) <= segmentOrder(ssd.segIndex) &&
-                // 2. use OCR confidence
-                (sd.word.map{_.getConfidence}.getOrElse(0f) <
-                  ssd.word.map{_.getConfidence}.getOrElse(0f)) ||
-                // 3. if the label is the only label in a segment
-                labelAssignments.get(sd.segIndex).map{_.size}.getOrElse(0) <
-                  labelAssignments.get(ssd.segIndex).map{_.size}.getOrElse(0))
+              if (Ordering.by((s: SegmentDescription)=>(
+                segmentOrder(s.segIndex),
+                -s.word.map{_.getConfidence}.getOrElse(0f),
+                labelAssignments.get(s.segIndex).map{_.size}.getOrElse(0),
+              )).compare(sd, ssd) < 0)
               {
                 // remove the old label assignment
                 labelAssignments += ssd.segIndex->(labelAssignments.getOrElse(ssd.segIndex, SortedSet()) - ssd)

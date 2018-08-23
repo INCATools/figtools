@@ -371,15 +371,16 @@ class AnalyzeImage
           seenLabel.get(sd.label) match {
             // is sd a more valid candidate than the existing ssd?
             case Some(ssd) =>
-              // 1. ordering - in the same segment group
-              if (Ordering.by((s: SegmentDescription)=>(
+              val sortOrder = Ordering.by((s: SegmentDescription)=>(
                 segmentOrder(s.segIndex),
                 // 2. use OCR confidence
                 -s.word.map{_.getConfidence}.getOrElse(0f),
                 // 3. if the label is the only label in a segment
                 labelAssignments.get(s.segIndex).map{_.size}.getOrElse(0),
-              )).compare(sd, ssd) < 0)
-              {
+              )).compare(sd, ssd)
+
+              // 1. ordering - in the same segment group
+              if (sortOrder < 0) {
                 // remove the old label assignment
                 labelAssignments += ssd.segIndex->(labelAssignments.getOrElse(ssd.segIndex, SortedSet()) - ssd)
                 // add the new label assignment
@@ -405,10 +406,11 @@ class AnalyzeImage
 
         val firstLabelIdx = captions.indexWhere(_._1 === firstLabel)
         val lastLabelIdx = captions.indexWhere(_._1 === lastLabel)
-        val missingCaptions =
-          if (firstLabelIdx > 0 && lastLabelIdx > 0 && firstLabelIdx < lastLabelIdx)
-            captions.span { _._1 !== firstLabel }._2.span { _._1 !== lastLabel }._1.drop(1)
-          else captions.span { _._1 !== lastLabel }._2.span { _._1 !== firstLabel }._1.drop(1)
+        var missingCaptions =
+          if (firstLabelIdx >= 0 && lastLabelIdx >= 0 && firstLabelIdx < lastLabelIdx)
+            captions.span { _._1 !== firstLabel }._2.span { _._1 !== lastLabel }._1
+          else captions.span { _._1 !== lastLabel }._2.span { _._1 !== firstLabel }._1
+        if (missingCaptions.size > 1) missingCaptions = missingCaptions.drop(1)
 
         // make missing captions
         val interpolated = unlabeled.zipWithIndex.flatMap { case (ui, uii) =>

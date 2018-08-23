@@ -40,6 +40,7 @@ class AnalyzeImage
 {
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
   val logger = Logger(getClass.getSimpleName)
+  val Epsilon = 0.001
 
   case class SegmentDescription(label: String, labelIndex: Int, word: Option[Word], segIndex: Int)
 
@@ -371,16 +372,15 @@ class AnalyzeImage
           seenLabel.get(sd.label) match {
             // is sd a more valid candidate than the existing ssd?
             case Some(ssd) =>
-              val sortOrder = Ordering.by((s: SegmentDescription)=>(
-                segmentOrder(s.segIndex),
-                // 2. use OCR confidence
-                -s.word.map{_.getConfidence}.getOrElse(0f),
-                // 3. if the label is the only label in a segment
-                labelAssignments.get(s.segIndex).map{_.size}.getOrElse(0),
-              )).compare(sd, ssd)
-
               // 1. ordering - in the same segment group
-              if (sortOrder < 0) {
+              if (segmentOrder(sd.segIndex) < segmentOrder(ssd.segIndex) ||
+                (segmentOrder(sd.segIndex) === segmentOrder(ssd.segIndex) &&
+                  // 2. use OCR confidence
+                  (sd.word.map{_.getConfidence}.getOrElse(0f)-ssd.word.map{_.getConfidence}.getOrElse(0f) >= Epsilon ||
+                    (math.abs(sd.word.map{_.getConfidence}.getOrElse(0f)-ssd.word.map{_.getConfidence}.getOrElse(0f)) < Epsilon &&
+                      // 3. if the label is the only label in a segment
+                      labelAssignments.get(sd.segIndex).map{_.size}.getOrElse(0) < labelAssignments.get(ssd.segIndex).map{_.size}.getOrElse(0)))))
+              {
                 // remove the old label assignment
                 labelAssignments += ssd.segIndex->(labelAssignments.getOrElse(ssd.segIndex, SortedSet()) - ssd)
                 // add the new label assignment
@@ -397,20 +397,28 @@ class AnalyzeImage
       }
 
       // add interpolated missing segment labels
-      if (unlabeled.nonEmpty) {
+      if (unlabeled.nonEmpty && captions.nonEmpty) {
         // get the range to interpolate
         val firstLabel = firstLabeled.lastOption.
-          map { i => segmentDescriptions(i).map { s => s.label }.max }.getOrElse(captions.head._1)
+          map { i => segmentDescriptions(i).map {s=> (s.label, s.labelIndex)}.max}.
+          getOrElse(captions.head)
         val lastLabel = lastLabeled.headOption.
-          map { i => segmentDescriptions(i).map { s => s.label }.min }.getOrElse(captions.last._1)
+          map { i => segmentDescriptions(i).map {s=> (s.label, s.labelIndex)}.min}.
+          getOrElse(captions.last)
 
-        val firstLabelIdx = captions.indexWhere(_._1 === firstLabel)
-        val lastLabelIdx = captions.indexWhere(_._1 === lastLabel)
-        var missingCaptions =
-          if (firstLabelIdx >= 0 && lastLabelIdx >= 0 && firstLabelIdx < lastLabelIdx)
-            captions.span { _._1 !== firstLabel }._2.span { _._1 !== lastLabel }._1
-          else captions.span { _._1 !== lastLabel }._2.span { _._1 !== firstLabel }._1
-        if (missingCaptions.size > 1) missingCaptions = missingCaptions.drop(1)
+        val firstLabelIdx = captions.indexWhere(_._1 === firstLabel._1)
+        val lastLabelIdx = captions.indexWhere(_._1 === lastLabel._1)
+        val missingCaptions =
+          if (firstLabelIdx === lastLabelIdx) Seq(firstLabel)
+          else if (firstLabelIdx >= 0 && lastLabelIdx >= 0 && firstLabelIdx < lastLabelIdx)
+            captions.
+              span { _._1 !== firstLabel._1 }._2.
+              span { _._1 !== lastLabel._1 }._1
+              .drop(1)
+          else captions.
+            span { _._1 !== lastLabel._1 }._2.
+            span { _._1 !== firstLabel._1 }._1.
+            drop(1)
 
         // make missing captions
         val interpolated = unlabeled.zipWithIndex.flatMap { case (ui, uii) =>

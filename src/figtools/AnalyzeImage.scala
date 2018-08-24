@@ -329,10 +329,10 @@ class AnalyzeImage
           logger.info(s"captionGroups=${pp(captionGroups)}")
           logger.info(s"bestFixedSegDescrs=${pp(bestFixedSegDescrs)}")
 
-          logger.info(s"Please close current image window to load next image...")
+          logger.info(s"""Please close image window "${imp.getTitle}" to load next image...""")
 
           // wait for user to close the image
-          while (WindowManager.getWindowCount > 0) Thread.sleep(200)
+          while (imp.isVisible) Thread.sleep(200)
 
           // clean up ROI list
           RoiManager.getRoiManager.reset()

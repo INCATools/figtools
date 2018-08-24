@@ -141,18 +141,21 @@ object CaptionSegmenter {
       for ((label, i) <- set.labels.zipWithIndex) {
         if (!seenLabels.contains(label)) {
           seenLabels += label
-          usedLabels += label
           val labelValues = label2Values(label).map(_.value)
           val labelIndexes = label2Values(label).flatMap(l=>getIndex(l.value, set.seriesType))
-
-          val description = if (findAfter) {
-            val next = if (i < set.labels.size - 1) set.labels(i + 1).matchStart else caption.length
-            caption.slice(label.matchStart, next)
-          } else {
-            val prev = if (i > 0) set.labels(i - 1).matchEnd else 0
-            caption.slice(prev, label.matchEnd)
+          // make sure a label index was found for each label value
+          // if not, skip this one
+          if (labelValues.size === labelIndexes.size) {
+            usedLabels += label
+            val description = if (findAfter) {
+              val next = if (i < set.labels.size - 1) set.labels(i + 1).matchStart else caption.length
+              caption.slice(label.matchStart, next)
+            } else {
+              val prev = if (i > 0) set.labels(i - 1).matchEnd else 0
+              caption.slice(prev, label.matchEnd)
+            }
+            captions += Caption(labelValues, labelIndexes, description)
           }
-          captions += Caption(labelValues, labelIndexes, description)
         }
       }
       if (captions.nonEmpty && set.labels.nonEmpty) {

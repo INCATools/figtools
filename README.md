@@ -22,7 +22,8 @@ Usage: figtools [options] [command] [command-options]
 
 Available commands: analyze, download, download-all, get, list, search
 
-Description: Recursively analyze and segment a directory full of publication images.
+Recursively analyze and segment a directory full of publication images.
+-----------------------------------------------------------------------
 Command: analyze
 Usage: figtools analyze <List of FigShare IDs to analyze (optional)>
   --dir  <DIR>
@@ -32,7 +33,8 @@ Usage: figtools analyze <List of FigShare IDs to analyze (optional)>
   --edge-detector  <MODULE>
         Edge detector to use. Possible values: susan imagej
 
-Description: Download figures from figtools into the current directory
+Download figures from figtools into the current directory
+---------------------------------------------------------
 Command: download
 Usage: figtools download <List of FigShare IDs>
   --url  <URL>
@@ -40,7 +42,8 @@ Usage: figtools download <List of FigShare IDs>
   --out-dir  <DIRECTORY>
         Output directory
 
-Description: Download *ALL* figures from figtools into the current directory.
+Download *ALL* figures from figtools into the current directory.
+----------------------------------------------------------------
 Command: download-all
 Usage: figtools download-all
   --url  <URL>
@@ -48,19 +51,22 @@ Usage: figtools download-all
   --out-dir  <DIRECTORY>
         Output directory
 
-Description: Get metadata for FigShare IDs
+Get metadata for FigShare IDs
+-----------------------------
 Command: get
 Usage: figtools get <List of FigShare IDs>
   --url  <URL>
         URL of FigShare API
 
-Description: List FigShare IDs
+List FigShare IDs
+-----------------
 Command: list
 Usage: figtools list
   --url  <URL>
         URL of FigShare API
 
-Description: Search for FigShare IDs
+Search for FigShare IDs
+-----------------------
 Command: search
 Usage: figtools search <List of search terms>
   --url  <URL>

@@ -71,7 +71,7 @@ object FigTools extends CommandApp[Main] {
       "download-all"->"Download *ALL* figures from figtools into the current directory.",
       "analyze"->"Recursively analyze and segment a directory full of publication images.")
     for (cmd <- commandsMessages.messages.map{_._1}) {
-      commandDescriptions.get(cmd).foreach(d=>println(s"Description: $d"))
+      commandDescriptions.get(cmd).foreach(d=>println(s"$d\n${"-" * d.length}"))
       println(commandsMessages.messagesMap(cmd).helpMessage(beforeCommandMessages.progName, cmd))
     }
     exit(0)

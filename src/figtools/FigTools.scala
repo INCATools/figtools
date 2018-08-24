@@ -76,22 +76,24 @@ object FigTools extends CommandApp[Main] {
     }
     exit(0)
   }
-  override def main(args: Array[String]): Unit =
+  override def main(args: Array[String]): Unit = {
     commandParser.withHelp.detailedParse(args)(beforeCommandParser.withHelp) match {
       case Left(err) => error(err)
       case Right((WithHelp(usage, help, d), dArgs, optCmd)) =>
         if (help || optCmd.isEmpty) helpAsked()
         if (usage) usageAsked()
-        d.fold( error, beforeCommand(_, dArgs) )
+        d.fold(error, beforeCommand(_, dArgs))
         optCmd.foreach {
           case Left(err) =>
             error(err)
           case Right((c, WithHelp(commandUsage, commandHelp, t), commandArgs)) =>
             if (commandHelp) commandHelpAsked(c)
             if (commandUsage) commandUsageAsked(c)
-            t.fold( error, run(_, commandArgs) )
+            t.fold(error, run(_, commandArgs))
         }
     }
+    sys.exit(0)
+  }
   def run(command: Main, args: RemainingArgs): Unit = {
     command match {
       case get: Get =>

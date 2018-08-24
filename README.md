@@ -4,6 +4,24 @@ Scala toolkit for analyzing figshare figures
 ## Installation Instructions
 
 Make sure you have the Java JDK 8 and [sbt](https://www.scala-sbt.org/) installed.
+You will also need [ImageMagick](https://www.imagemagick.org/script/download.php)
+installed in order to convert PDF files to PNG format, and `curl` to fetch
+runtime dependencies. `curl` is preinstalled on most Unix-like OS's.
+
+On macOS, you can install all the dependencies using the following:
+
+If you have not installed [Homebrew](https://brew.sh/), do:
+
+```
+/usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+```
+
+Next, install dependencies using `Homebrew`:
+
+```
+brew cask install java8
+brew install sbt imagemagick curl
+```
 
 Next, in the top-level `figtools` directory, run:
 

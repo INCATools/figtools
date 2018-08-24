@@ -29,7 +29,6 @@ import ij.gui.Roi
 import ij.plugin.frame.RoiManager
 
 import scala.collection.{SortedSet, mutable}
-import scala.annotation.tailrec
 import de.sciss.equal.Implicits._
 
 class AnalyzeImage
@@ -219,7 +218,7 @@ class AnalyzeImage
               flatMap { cs => cs.index }).
             sortBy { case (_, i) => i }
           val (bestFixedSegDescrs, bestOrder, bestScore) = (for {
-            (ordered, i) <- Seq(
+            (ordered, orderedIdx) <- Seq(
               orderSegments(segments),
               orderSegments(segments.map { s => ImageSegment(s.imp,
                 ImageSegmenter.Box(s.box.y, s.box.x, s.box.y2, s.box.x2)) }),
@@ -234,23 +233,33 @@ class AnalyzeImage
               orderSegments(segments.map { s => ImageSegment(s.imp,
                 ImageSegmenter.Box(xmax - s.box.x2, ymax - s.box.y2, xmax - s.box.x, ymax - s.box.y)) }),
               orderSegments(segments.map { s => ImageSegment(s.imp,
-                ImageSegmenter.Box(ymax - s.box.y2, xmax - s.box.x2, ymax - s.box.y, xmax - s.box.x)) })).zipWithIndex
+                ImageSegmenter.Box(ymax - s.box.y2, xmax - s.box.x2, ymax - s.box.y, xmax - s.box.x)) }),
+            ).zipWithIndex
           } yield {
             val updatedSegDescs = findCaptions(orderedCaptions, ordered, segmentDescriptions)
 
+            var score = -orderedIdx
             val captionOrder = orderedCaptions.map{_._1}.zipWithIndex.toMap
-            val segDescrOrder = updatedSegDescs.toSeq.
-              sortBy { _._1 }.
-              flatMap { _._2 }.
-              map { sd => captionOrder(sd.label) }
-            var score = -i
-            for ((sdo, i) <- segDescrOrder.zipWithIndex) {
-              if (i < segDescrOrder.length - 1) {
-                val next = segDescrOrder(i + 1)
-                if (next - sdo === 1) score += 1000
-                else if (next - sdo > 0) score += 100
+            for ((_, sds) <- updatedSegDescs.toSeq.sortBy{_._1}) {
+              val sdsSeq = sds.toSeq
+              // reward segments with only one label to discourage undersegmentation
+              if (sdsSeq.size === 1) score += 1000
+              for ((sd, sdsIndex) <- sdsSeq.zipWithIndex) {
+                val sdo = captionOrder(sd.label)
+                if (sdsIndex < sdsSeq.size - 1) {
+                  val nextSd = sdsSeq(sdsIndex + 1)
+                  val next = captionOrder(nextSd.label)
+                  // reward when the next segment's caption is the next in sequence
+                  if (next - sdo === 1) score += 1000
+                  // smaller reward when the next segment's caption is in the right direction,
+                  // even if it skips
+                  else if (next > sdo) score += 100
+                  // penalty if the next segment's caption is in the wrong direction
+                  else if (next < sdo) score -= 1000
+                }
               }
             }
+            logger.info(s"orderedIdx=$orderedIdx, updatedSegDescs=${pp(updatedSegDescs)}, ordered=${pp(ordered)}, score=$score")
             (updatedSegDescs, ordered, score)
           }).sortBy { -_._3 }.
             headOption.
@@ -260,56 +269,58 @@ class AnalyzeImage
           log(imp, s"best segment order, score $bestScore",
             bestOrder.zipWithIndex.map{case (s,o)=> s"$o seg$s"->segments(s).box.toRoi}: _*)
 
-          // 4. merge remaining unlabeled subpanels to nearest existing subpanels
-          @tailrec def mergeSegments
-          (segments: Seq[(ImageSegmenter.Box[Int], Set[Int])]):
-          Seq[(ImageSegmenter.Box[Int], Set[Int])] =
-          {
-            val unlabeled = segments.zipWithIndex.find { case ((_, ss), _) =>
-              ss.forall { si => bestFixedSegDescrs.getOrElse(si, Seq()).isEmpty }
-            }
-            unlabeled match {
-              case Some(((box, ss), i)) =>
-                val nearest = segments.zipWithIndex.
-                  filter { case (_, ni) => i !== ni }.
-                  sortBy { case (s, _) => box.toRect.distance(s._1.toRect) }.
-                  headOption
-                nearest match {
-                  case Some(((nbox, nss), ni)) =>
-                    mergeSegments(
-                      segments.zipWithIndex.
-                        filter { case (_, mi) => (mi !== i) && (mi !== ni) }.
-                        map { _._1 } ++
-                        Seq((
-                          ImageSegmenter.Box(
-                            math.min(box.x, nbox.x),
-                            math.min(box.y, nbox.y),
-                            math.max(box.x2, nbox.x2),
-                            math.max(box.y2, nbox.y2)),
-                          ss ++ nss)))
-                  case None => segments
+          // 4. merge duplicately labeled segments into a single segment as long as
+          // that doesn't cause the merged segment to overlap another segment with a
+          // different label
+          var rtree = RTree.create[SortedSet[SegmentDescription],Rectangle]()
+          for ((s,i) <- segments.zipWithIndex) {
+            val sds = bestFixedSegDescrs.getOrElse(i, SortedSet())
+            val labels = sds.map{s=> s.label}.toSet
+
+            val sBox = s.box.toRect
+            val nearest = rtree.nearest(sBox, Double.MaxValue, Int.MaxValue).
+              filter{e=> e.value.map{_.label}.toSet === labels}.
+              toBlocking.getIterator.asScala.toSeq.headOption
+            nearest match {
+              case Some(n) =>
+                val box = ImageSegmenter.Box(
+                  math.min(sBox.x1(), n.geometry().x1()),
+                  math.min(sBox.y1(), n.geometry().y1()),
+                  math.max(sBox.x2(), n.geometry().x2()),
+                  math.max(sBox.y2(), n.geometry().y2()))
+                val merged = sds ++ n.value()
+                val mergedLabels = merged.map{_.label}.toSet
+                val overlapping = rtree.search(box.toRect).toBlocking.getIterator.asScala.
+                  filter{e=> e.value.map{_.label}.toSet !== mergedLabels}.toSeq.headOption
+                if (overlapping.isEmpty) {
+                  rtree = rtree.delete(Entries.entry(n.value(), n.geometry()), true)
+                  rtree = rtree.delete(Entries.entry(sds, s.box.toRect), true)
+                  rtree = rtree.add(Entries.entry(merged, box.toRect))
                 }
-              case None => segments
+              case None =>
+                rtree = rtree.add(Entries.entry(sds, s.box.toRect))
             }
           }
-          val mergedSegments = mergeSegments(segments.zipWithIndex.map { case (s, i) => (s.box, Set(i)) })
+          val mergedSegments = rtree.entries.toBlocking.getIterator.asScala.toSeq
           logger.info(s"mergedSegments=${pp(mergedSegments)}")
 
           // show
           val captionLabels = ArrayBuffer[(String, Roi)]()
-          for {
-            (box, ms) <- mergedSegments
-            i <- ms
-            descs <- bestFixedSegDescrs.get(i)
-            desc <- descs
-          } {
-            val segment = segments(i)
-            val roi = box.toRoi
-            captionLabels += desc.label->roi
-            for {w <- desc.word} {
+          for (entry <- mergedSegments) {
+            val rect = entry.geometry()
+            val sds = entry.value()
+            captionLabels += sds.map{_.label}.mkString(" ")->ImageSegmenter.Box(
+              rect.x1().toInt,
+              rect.y1().toInt,
+              rect.x2().toInt,
+              rect.y2().toInt).toRoi
+            for {
+              s <- sds
+              w <- s.word
+            } {
               captionLabels += w.getText->new Roi(
-                w.getBoundingBox.x+segment.box.x,
-                w.getBoundingBox.y+segment.box.y,
+                w.getBoundingBox.x+rect.x1.toInt,
+                w.getBoundingBox.y+rect.y1.toInt,
                 w.getBoundingBox.width,
                 w.getBoundingBox.height)
             }
@@ -353,95 +364,121 @@ class AnalyzeImage
     val segmentOrder = ordered.zipWithIndex.map{case (i,j)=>i->j}.toMap
     val seenLabel = mutable.Map[String, SegmentDescription]()
     val labelAssignments = mutable.Map[Int, SortedSet[SegmentDescription]]()
+
+    // first, remove any duplicate impostor labels
     var segments = ordered
     while (segments.nonEmpty) {
       // get the span of labeled segments
       val (firstLabeled, rest) = segments.
         span { i => segmentDescriptions.getOrElse(i, Seq()).nonEmpty }
       // then get the next span of unlabeled segments
-      val (unlabeled, rest2) = rest.
+      val (_, rest2) = rest.
         span { i => segmentDescriptions.getOrElse(i, Seq()).isEmpty }
-      // then get the next span of labeled segments
-      val (lastLabeled, _) = rest2.
-        span { i => segmentDescriptions.getOrElse(i, Seq()).nonEmpty }
 
-      // remove any duplicate impostor labels
+      logger.info(s"ordered=${pp(ordered)}, segmentOrder=${pp(segmentOrder)}, labelAssignments=${pp(labelAssignments)}")
       for (i <- firstLabeled) {
         val sds = segmentDescriptions.getOrElse(i, Seq())
         for (sd <- sds) {
           seenLabel.get(sd.label) match {
             // is sd a more valid candidate than the existing ssd?
             case Some(ssd) =>
-              // 1. ordering - in the same segment group
-              if (segmentOrder(sd.segIndex) < segmentOrder(ssd.segIndex) ||
-                (segmentOrder(sd.segIndex) === segmentOrder(ssd.segIndex) &&
-                  // 2. use OCR confidence
-                  (sd.word.map{_.getConfidence}.getOrElse(0f)-ssd.word.map{_.getConfidence}.getOrElse(0f) >= Epsilon ||
-                    (math.abs(sd.word.map{_.getConfidence}.getOrElse(0f)-ssd.word.map{_.getConfidence}.getOrElse(0f)) < Epsilon &&
-                      // 3. if the label is the only label in a segment
-                      labelAssignments.get(sd.segIndex).map{_.size}.getOrElse(0) < labelAssignments.get(ssd.segIndex).map{_.size}.getOrElse(0)))))
+              logger.info(s"Comparing sd=${pp(sd)} (segmentOrder=${segmentOrder(sd.segIndex)}) with ssd=${pp(ssd)} (segmentOrder=${segmentOrder(ssd.segIndex)})")
+              // 1. if the label is the only label in a segment
+              if (labelAssignments.get(sd.segIndex).map { _.size }.getOrElse(0) + 1 <
+                labelAssignments.get(ssd.segIndex).map { _.size }.getOrElse(0) ||
+                (labelAssignments.get(sd.segIndex).map { _.size }.getOrElse(0) + 1 ===
+                  labelAssignments.get(ssd.segIndex).map { _.size }.getOrElse(0) && (
+                  sd.word.map { _.getConfidence }.getOrElse(0f) -
+                    ssd.word.map { _.getConfidence }.getOrElse(0f) >= Epsilon ||
+                    (math.abs(sd.word.map { _.getConfidence }.getOrElse(0f) -
+                      ssd.word.map { _.getConfidence }.getOrElse(0f)) < Epsilon))))
               {
+                logger.info(s"Overwriting ssd with sd")
                 // remove the old label assignment
-                labelAssignments += ssd.segIndex->(labelAssignments.getOrElse(ssd.segIndex, SortedSet()) - ssd)
+                labelAssignments += ssd.segIndex -> (labelAssignments.getOrElse(ssd.segIndex, SortedSet()) - ssd)
                 // add the new label assignment
-                labelAssignments += i->(labelAssignments.getOrElse(i, SortedSet()) + sd)
+                labelAssignments += i -> (labelAssignments.getOrElse(i, SortedSet()) + sd)
                 // overwrite the seenLabel entry
-                seenLabel += sd.label->sd
+                seenLabel += sd.label -> sd
+              }
+              else {
+                logger.info(s"NOT overwriting ssd with sd")
               }
             case None =>
               // add new label assignment and seenLabel entry
-              labelAssignments += i->(labelAssignments.getOrElse(i, SortedSet()) + sd)
-              seenLabel += sd.label->sd
+              labelAssignments += i -> (labelAssignments.getOrElse(i, SortedSet()) + sd)
+              seenLabel += sd.label -> sd
           }
         }
       }
+      segments = rest2
+    }
+
+    // next, fill in any unlabeled segments
+    segments = ordered
+    while (segments.nonEmpty) {
+      // get the span of labeled segments
+      val (firstLabeled, rest) = segments.
+        span { i => labelAssignments.getOrElse(i, Seq()).nonEmpty }
+      // then get the next span of unlabeled segments
+      val (unlabeled, rest2) = rest.
+        span { i => labelAssignments.getOrElse(i, Seq()).isEmpty }
+      // then get the next span of labeled segments
+      val (lastLabeled, _) = rest2.
+        span { i => labelAssignments.getOrElse(i, Seq()).nonEmpty }
 
       // add interpolated missing segment labels
       if (unlabeled.nonEmpty && captions.nonEmpty) {
+        logger.info(s"analyzing unlabeled segments ${pp(unlabeled)}")
         // get the range to interpolate
         val firstLabel = firstLabeled.lastOption.
-          map { i => segmentDescriptions(i).map {s=> (s.label, s.labelIndex)}.max}.
+          map { i => labelAssignments(i).map {s=> (s.label, s.labelIndex)}.max}.
           getOrElse(captions.head)
+        logger.info(s"firstLabel=$firstLabel")
         val lastLabel = lastLabeled.headOption.
-          map { i => segmentDescriptions(i).map {s=> (s.label, s.labelIndex)}.min}.
+          map { i => labelAssignments(i).map {s=> (s.label, s.labelIndex)}.min}.
           getOrElse(captions.last)
+        logger.info(s"lastLabel=$lastLabel")
 
         val firstLabelIdx = captions.indexWhere(_._1 === firstLabel._1)
+        logger.info(s"firstLabelIdx=$firstLabelIdx")
         val lastLabelIdx = captions.indexWhere(_._1 === lastLabel._1)
-        val missingCaptions =
+        logger.info(s"lastLabelIdx=$lastLabelIdx")
+        var missingCaptions =
           if (firstLabelIdx === lastLabelIdx) Seq(firstLabel)
           else if (firstLabelIdx >= 0 && lastLabelIdx >= 0 && firstLabelIdx < lastLabelIdx)
             captions.
               span { _._1 !== firstLabel._1 }._2.
               span { _._1 !== lastLabel._1 }._1
-              .drop(1)
           else captions.
             span { _._1 !== lastLabel._1 }._2.
             span { _._1 !== firstLabel._1 }._1.
-            drop(1)
+            reverse
+        if (missingCaptions.size > 1) missingCaptions = missingCaptions.drop(1)
+        logger.info(s"missingCaptions=$missingCaptions")
 
         // make missing captions
         val interpolated = unlabeled.zipWithIndex.flatMap { case (ui, uii) =>
-          val mc = missingCaptions.slice(
-            (uii.toDouble / unlabeled.size.toDouble * missingCaptions.size.toDouble).toInt,
-            ((uii + 1).toDouble / unlabeled.size.toDouble * missingCaptions.size.toDouble).toInt)
-          if (mc.nonEmpty)
+          val startSlice = math.floor(uii.toDouble / unlabeled.size.toDouble * missingCaptions.size.toDouble).toInt
+          val endSlice = math.ceil((uii + 1).toDouble / unlabeled.size.toDouble * missingCaptions.size.toDouble).toInt
+          val mc = missingCaptions.slice(startSlice, endSlice)
+          val ret = if (mc.nonEmpty)
             Seq(ui -> SortedSet(mc.map { c => SegmentDescription(c._1, c._2, None, ui) }: _*))
           else Seq()
+          logger.info(s"ui=$ui, uii=$uii, startSlice=$startSlice, endSlice=$endSlice, mc=${pp(mc)}, ret=${pp(ret)}")
+          ret
         }.toMap
+        logger.info(s"interpolated=$interpolated")
         // make sure the missing captions should be used
         // do not overwrite any existing captions
         for {
           (i,sds) <- interpolated
           sd <- sds
         } {
-          seenLabel.get(sd.label) match {
-            case Some(_) =>
-            case None =>
-              // add new label assignment and seenLabel entry
-              labelAssignments += i->(labelAssignments.getOrElse(i, SortedSet()) + sd)
-              seenLabel += sd.label->sd
-          }
+          // add new label assignment and seenLabel entry
+          logger.info(s"Adding label ${pp(sd)} to segment $i")
+          labelAssignments += i->(labelAssignments.getOrElse(i, SortedSet()) + sd)
+          seenLabel += sd.label->sd
         }
       }
       segments = rest2

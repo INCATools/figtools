@@ -3,7 +3,7 @@ Scala toolkit for analyzing figshare figures
 
 ## Installation Instructions
 
-Make sure you have the java JDK and [sbt](https://www.scala-sbt.org/1.0/docs/Setup.html) installed.
+Make sure you have the java JDK and [sbt](https://www.scala-sbt.org/) installed.
 
 Next, in the top-level `figtools` directory, run:
 

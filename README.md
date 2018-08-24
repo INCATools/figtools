@@ -1,5 +1,12 @@
 # figtools
-Scala toolkit for analyzing figshare figures
+
+Scala toolkit for analyzing [FigShare](https://figshare.com/) figures.
+
+`figtools` allows you to programmatically download, search, list, and analyze
+publication figure images from the `FigShare` database. The `analyze` feature
+uses image processing techniques to separate publication figures into
+separate subpanels, and attempts to assign the correct caption label from the
+figure description text to each subpanel.
 
 ## Installation Instructions
 

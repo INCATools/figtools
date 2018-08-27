@@ -15,6 +15,9 @@ You will also need [ImageMagick](https://www.imagemagick.org/script/download.php
 installed in order to convert PDF files to PNG format, and `curl` to fetch
 runtime dependencies. `curl` is preinstalled on most Unix-like OS's.
 
+Finally, you will need [tesseract](https://github.com/tesseract-ocr/tesseract) 
+OCR installed.
+
 On macOS, you can install all the dependencies using the following:
 
 If you have not installed [Homebrew](https://brew.sh/), do:
@@ -27,7 +30,7 @@ Next, install dependencies using `Homebrew`:
 
 ```
 brew cask install java8
-brew install sbt imagemagick curl
+brew install sbt imagemagick curl tesseract
 ```
 
 Next, in the top-level `figtools` directory, run:
@@ -37,6 +40,12 @@ sbt updatePrependScript package
 ```
 
 Now in the `figtools/bin`, directory, run the `figtools` script.
+
+NOTE: `figtools` needs to know how to find the tesseract `tessdata` directory.
+It will look in `/usr/share/tessdata`, in the current directory, or
+in the directory pointed to by the `TESSDATA_PREFIX` environment variable.
+If you installed tesseract with homebrew, you can set `TESSDATA_PREFIX` to
+`/usr/local/opt/tesseract/share/tessdata`.
 
 The first time you run the script, it will download all of its dependencies to
 your `~/.ivy2` directory. Then it will display the help message:

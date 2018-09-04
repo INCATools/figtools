@@ -1,3 +1,6 @@
+
+[![Build](https://travis-ci.org/INCATools/figtools.svg?branch=master)](https://travis-ci.org/INCATools/figtools?branch=master)
+
 # figtools
 
 Scala toolkit for analyzing [FigShare](https://figshare.com/) figures.

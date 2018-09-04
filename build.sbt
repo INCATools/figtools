@@ -53,8 +53,11 @@ lazy val figtools = (project in file(".")).
       "com.github.davidmoten" % "rtree" % "0.8-RC10",
       "io.reactivex" %% "rxscala" % "0.26.5",
       "de.sciss" %% "equal" % "0.1.2",
-      "org.jline" % "jline" % "3.9.0"
+      "org.jline" % "jline" % "3.9.0",
+      "org.scalactic" %% "scalactic" % "3.0.5",
+      "org.scalatest" %% "scalatest" % "3.0.5" % "test",
     ),
+    logBuffered in Test := false,
     artifactPath in (Compile, packageBin) := {
       baseDirectory.value / "bin" / name.value
     },

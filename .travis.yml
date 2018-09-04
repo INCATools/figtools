@@ -1,0 +1,7 @@
+language: scala
+sudo: enabled
+install:
+    - sudo apt-get update -qq
+    - sudo apt-get install -qq imagemagick tesseract-ocr tesseract-ocr-eng
+script:
+    - TESSDATA_PREFIX=$(p=(/usr/share/tesseract-ocr/*/tessdata); echo "${p[-1]}") sbt test

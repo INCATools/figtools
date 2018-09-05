@@ -4,6 +4,7 @@ import org.tsers.zeison.Zeison
 import better.files._
 import caseapp._
 import caseapp.core.help.WithHelp
+import ij.IJ
 
 sealed abstract class Main extends Product with Serializable
 
@@ -92,14 +93,16 @@ object FigTools extends CommandApp[Main] {
             t.fold(error, run(_, commandArgs))
         }
     }
-    sys.exit(0)
   }
+
   def run(command: Main, args: RemainingArgs): Unit = {
     command match {
       case get: Get =>
         if (args.remaining.isEmpty) commandHelpAsked("get")
-        for (id <- args.remaining) {
-          val json = new FigShareApi(get.common.url).get(id)
+        for {
+          id <- args.remaining
+          json <- new FigShareApi(get.common.url).get(id)
+        } {
           println(Zeison.renderPretty(json))
         }
       case list: List =>
@@ -111,11 +114,11 @@ object FigTools extends CommandApp[Main] {
         }
       case download: Download =>
         if (args.remaining.isEmpty) commandHelpAsked("download")
-        for (id <- args.remaining) {
+        for (id <- args.remaining.toList.par) {
           new FigShareApi(download.common.url).download(id, download.outDir)
         }
       case downloadAll: DownloadAll =>
-        new FigShareApi(downloadAll.common.url).downloadAll(downloadAll.outDir)
+          new FigShareApi(downloadAll.common.url).downloadAll(downloadAll.outDir)
       case analyze: Analyze =>
         edgeDetector = analyze.edgeDetector
         pdfExportResolution = analyze.pdfExportResolution

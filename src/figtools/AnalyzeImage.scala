@@ -8,7 +8,6 @@ import com.typesafe.scalalogging.Logger
 import edu.stanford.nlp.ling.CoreAnnotations.SentencesAnnotation
 import edu.stanford.nlp.pipeline.{Annotation, StanfordCoreNLP}
 
-import sys.process._
 import collection.JavaConverters._
 import edu.stanford.nlp.util.logging.RedwoodConfiguration
 import figtools.ImageSegmenter.ImageSegment
@@ -30,6 +29,10 @@ import ij.plugin.frame.RoiManager
 
 import scala.collection.{SortedSet, mutable}
 import de.sciss.equal.Implicits._
+import org.apache.pdfbox.pdmodel.PDDocument
+import org.apache.pdfbox.rendering.{ImageType, PDFRenderer}
+import org.apache.pdfbox.tools.imageio.ImageIOUtil
+import java.io.IOException
 
 class AnalyzeImage
 ( edgeDetector: String = "imagej",
@@ -93,27 +96,35 @@ class AnalyzeImage
             // use the convert command-line tool to convert PDF files to image files
             if (imageFile.extension.isDefined && imageFile.extension.get.toLowerCase === ".pdf") {
               imageFiles.clear()
-              val cmd = Seq("convert", "-density", pdfExportResolution.toString, imageFile.toString, s"$imageFile.png")
-              val status = cmd.!
-              if (status !== 0) {
-                throw new RuntimeException(s"Command $cmd returned exit status $status")
+              for (document <- PDDocument.load(imageFile.toJava).autoClosed) {
+                if (document.getNumberOfPages > 1) {
+                  logger.warn(s"File $imageFile contains more than one image, skipping")
+                  break
+                }
+                try {
+                  val pdfRenderer = new PDFRenderer(document)
+                  for (page <- 0 until document.getNumberOfPages) {
+                    val bim = pdfRenderer.renderImageWithDPI(page, pdfExportResolution, ImageType.RGB)
+                    ImageIOUtil.writeImage(bim, s"$imageFile.png", pdfExportResolution)
+                  }
+                }
+                catch {
+                  case e: IOException =>
+                    Console.err.println("Exception while trying to create pdf document - " + e)
+                }
               }
               val pngs = datapackage.parent.glob("*.png")
               val outimages = pngs.filter(f =>
                 f.name.toString.matches(raw"""^${Pattern.quote(imageFile.name.toString)}(-[0-9]+)?\.png$$"""))
               imageFiles ++= outimages
+              if (imageFiles.isEmpty) {
+                logger.info(s"File $imageFile contains no images, skipping")
+                break
+              }
             }
           }
           else {
             Console.err.println(s"Could not find file $imageFile")
-          }
-          if (imageFiles.size > 1) {
-            logger.warn(s"File $imageFile contains more than one image, skipping")
-            break
-          }
-          if (imageFiles.isEmpty) {
-            logger.info(s"File $imageFile contains no images, skipping")
-            break
           }
 
           // TODO: handle checking multiple caption groups, not just the highest-scoring one

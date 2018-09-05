@@ -11,11 +11,8 @@ figure description text to each subpanel.
 ## Installation Instructions
 
 Make sure you have the Java JDK 8 and [sbt](https://www.scala-sbt.org/) installed.
-You will also need [ImageMagick](https://www.imagemagick.org/script/download.php)
-installed in order to convert PDF files to PNG format, and `curl` to fetch
-runtime dependencies. `curl` is preinstalled on most Unix-like OS's.
 
-Finally, you will need [tesseract](https://github.com/tesseract-ocr/tesseract) 
+You will also need [tesseract](https://github.com/tesseract-ocr/tesseract) 
 OCR installed.
 
 On macOS, you can install all the dependencies using the following:
@@ -30,7 +27,7 @@ Next, install dependencies using `Homebrew`:
 
 ```
 brew cask install java8
-brew install sbt imagemagick curl tesseract
+brew install sbt tesseract
 ```
 
 Next, in the top-level `figtools` directory, run:

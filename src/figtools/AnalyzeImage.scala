@@ -40,6 +40,7 @@ class AnalyzeImage
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
   val logger = Logger(getClass.getSimpleName)
   val Epsilon = 0.001
+  System.setProperty("java.awt.headless","true")
 
   case class SegmentDescription(label: String, labelIndex: Int, word: Option[Word], segIndex: Int)
 

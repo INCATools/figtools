@@ -34,7 +34,7 @@ lazy val figtools = (project in file(".")).
     resolvers += Resolver.sonatypeRepo("snapshots"),
     libraryDependencies ++= Seq(
       "com.github.alexarchambault" %% "case-app" % "2.0.0-M3",
-      "net.imagej" % "ij" % "1.52c",
+      "net.imagej" % "imagej" % "2.0.0-rc-68",
       "net.sourceforge.tess4j" % "tess4j" % "3.4.0",
       "edu.stanford.nlp" % "stanford-corenlp" % "3.8.0",
       "edu.stanford.nlp" % "stanford-corenlp" % "3.8.0" classifier "models-english",

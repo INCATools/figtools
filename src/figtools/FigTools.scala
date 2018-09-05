@@ -122,6 +122,7 @@ object FigTools extends CommandApp[Main] {
       case analyze: Analyze =>
         edgeDetector = analyze.edgeDetector
         pdfExportResolution = analyze.pdfExportResolution
+        implicit val log = ImageLog(showLog=true)
         new AnalyzeImage(analyze.edgeDetector, analyze.pdfExportResolution, analyze.dir.toFile, args.remaining).analyze()
     }
   }

@@ -4,18 +4,17 @@ import ij.process.FloatProcessor
 import ij.{IJ, ImagePlus}
 import org.openimaj.image.FImage
 import org.openimaj.image.processing.edges.SUSANEdgeDetector
-import ImageLog.log
 import com.typesafe.scalalogging.Logger
 
 object EdgeDetectors {
   val logger = Logger(getClass.getSimpleName)
 
   trait EdgeDetector {
-    def run(imp: ImagePlus): ImagePlus
+    def run(imp: ImagePlus)(implicit log: ImageLog): ImagePlus
   }
 
   case object ImageJ extends EdgeDetector {
-    def run(imp: ImagePlus): ImagePlus = {
+    override def run(imp: ImagePlus)(implicit log: ImageLog): ImagePlus = {
       logger.info("running ImageJ edge detector, this may take some time...")
       val edgeImage = imp.duplicate()
       IJ.run(edgeImage, "Find Edges", "")
@@ -27,7 +26,7 @@ object EdgeDetectors {
     }
   }
   case object Susan extends EdgeDetector {
-    def run(imp: ImagePlus): ImagePlus = {
+    override def run(imp: ImagePlus)(implicit log: ImageLog): ImagePlus = {
       logger.info("running Susan edge detector, this may take some time...")
       val fimage = new FImage(imp.getProcessor.getFloatArray)
       val Threshold = 0.08

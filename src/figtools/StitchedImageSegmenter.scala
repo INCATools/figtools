@@ -2,11 +2,10 @@ package figtools
 
 import figtools.ImageSegmenter.ImageSegment
 import ij.ImagePlus
-import ImageLog.log
 import com.typesafe.scalalogging.Logger
 import de.sciss.equal.Implicits._
 
-class StitchedImageSegmenter extends ImageSegmenter {
+class StitchedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
   val logger = Logger(getClass.getSimpleName)
 
   override def segment(imp: ImagePlus): Seq[ImageSegment] = {

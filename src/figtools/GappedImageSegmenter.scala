@@ -8,7 +8,6 @@ import ij.measure.ResultsTable
 import ij.plugin.filter.ParticleAnalyzer
 
 import scala.collection.mutable.ArrayBuffer
-import ImageLog.{log, logStep}
 import com.github.davidmoten.rtree.{Entries, RTree}
 import com.github.davidmoten.rtree.geometry.Rectangle
 import ij.gui.Roi
@@ -21,7 +20,7 @@ import scala.collection.mutable
 // TODO:
 //   - look at overlapping missing panels to determine proper spacing
 //   - check matching border colors
-class GappedImageSegmenter extends ImageSegmenter {
+class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
   import GappedImageSegmenter._
 
   override def segment(imp: ImagePlus): Seq[ImageSegment] = {

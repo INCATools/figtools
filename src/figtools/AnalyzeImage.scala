@@ -21,7 +21,6 @@ import java.util
 import scala.collection.mutable.ArrayBuffer
 import net.sourceforge.tess4j.{Tesseract, Word}
 import org.tsers.zeison.Zeison
-import ImageLog.log
 import com.github.davidmoten.rtree.geometry.{Geometries, Rectangle}
 import com.github.davidmoten.rtree.{Entries, RTree}
 import ij.gui.Roi
@@ -38,7 +37,7 @@ class AnalyzeImage
 ( edgeDetector: String = "imagej",
   pdfExportResolution: Int = 300,
   dir: File = file".",
-  ids: Seq[String])
+  ids: Seq[String])(implicit log: ImageLog)
 {
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
   val logger = Logger(getClass.getSimpleName)

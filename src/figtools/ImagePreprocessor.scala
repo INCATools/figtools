@@ -2,13 +2,12 @@ package figtools
 import ij.ImagePlus
 import ij.gui.Roi
 import ij.process.{ImageConverter, ImageProcessor}
-import ImageLog.log
 
 import scala.collection.mutable
 import scala.util.control.Breaks._
 import de.sciss.equal.Implicits._
 
-class ImagePreprocessor {
+class ImagePreprocessor()(implicit log: ImageLog) {
   def preprocess(imp: ImagePlus): ImagePlus = {
     //log(imp, "[ImagePreprocessor] original image")
 

@@ -43,6 +43,7 @@ class AnalyzeImage
   val logger = Logger(getClass.getSimpleName)
   val Epsilon = 0.001
   val BetterConfidence = 10.0
+  val MinOrderOverlapPct = 80.0
 
   case class SegmentDescription(label: String, labelIndex: Int, word: Option[Word], segIndex: Int)
 
@@ -505,26 +506,21 @@ class AnalyzeImage
 
   // 1. group segments into rows/columns
   def orderSegments(segments: Seq[ImageSegment]): Seq[Int] = {
-    val rtree = RTree.create[(ImageSegment,Int),Rectangle].add(
+    var rtree = RTree.create[(ImageSegment,Int),Rectangle].add(
       segments.zipWithIndex.map{case (s,i)=>Entries.entry((s,i), s.box.toRect)}.asJava)
 
-    val ordered = new util.LinkedHashSet[Int]().asScala
-    while (ordered.size < segments.size) {
-      val first = segments.zipWithIndex.
-        filter { s => !ordered.contains(s._2) }.
-        minBy { s => (s._1.box.y, s._1.box.x) }
-
-      ordered += first._2
-      val rowSearch = rtree.search(Geometries.rectangle(
-          first._1.box.x2,
-          (first._1.box.y + 0.1 * (first._1.box.y2 - first._1.box.y + 1)).toFloat,
-          first._1.imp.getWidth.toFloat,
-          (first._1.box.y2 - 0.1 * (first._1.box.y2 - first._1.box.y + 1)).toFloat)).
-        toBlocking.getIterator.asScala.filter{e=>e.value._2 !== first._2}.toSeq
-      if (rowSearch.nonEmpty) {
-        val nearest = rowSearch.minBy{e=> e.geometry().distance(first._1.box.toRect) }
-        ordered += nearest.value._2
-      }
+    val ordered = new util.LinkedHashSet[Int].asScala
+    while (!rtree.isEmpty) {
+      val row = rtree.entries.toBlocking.getIterator.asScala.filter{e=>
+        rtree.search(Geometries.rectangle(
+          e.value._1.box.x,
+          math.min(0, e.value._1.box.y-1),
+          e.value._1.box.x2,
+          e.value._1.box.y-1,
+        )).toBlocking.getIterator.asScala.isEmpty
+      }.toSeq.sortBy{e=> (e.value._1.box.x, e.value._1.box.y)}
+      rtree = rtree.delete(row.asJava, true)
+      ordered ++= row.map{e=> e.value._2}
     }
     ordered.toSeq
   }

@@ -435,16 +435,16 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
           }
         }
       }
-      val rois = groups.toSeq.map{case (i,g)=>
-        s"$i"->g.map{s=>s.segment.box}.reduce((a,b) =>
-          ImageSegmenter.Box(
-            Seq(a.x, b.x).min,
-            Seq(a.y, b.y).min,
-            Seq(a.x2, b.x2).max,
-            Seq(a.y2, b.y2).max)
-        ).toRoi
-      }
-      log.step(imp, s"[GappedImageSegmenter] recover small components step, rois.size=${rois.size}", rois: _*)
+      //val rois = groups.toSeq.map{case (i,g)=>
+      //  s"$i"->g.map{s=>s.segment.box}.reduce((a,b) =>
+      //    ImageSegmenter.Box(
+      //      Seq(a.x, b.x).min,
+      //      Seq(a.y, b.y).min,
+      //      Seq(a.x2, b.x2).max,
+      //      Seq(a.y2, b.y2).max)
+      //  ).toRoi
+      //}
+      //log.step(imp, s"[GappedImageSegmenter] recover small components step, rois.size=${rois.size}", rois: _*)
     }
     // return the remaining r-tree entries
     logger.info(s"return merged group entries")

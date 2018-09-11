@@ -101,7 +101,7 @@ class AnalyzeImage
     }
     logger.info("")
 
-    val results = mutable.Map[String, LabelResults]()
+    val results = new util.LinkedHashMap[String, LabelResults].asScala
     val resources = json.resources.toList
     for (resource <- resources) {
       breakable {
@@ -365,7 +365,7 @@ class AnalyzeImage
         logger.info(s"""Please close image window "${imp.getTitle}" to load next image...""")
 
         // add to results map
-        val descriptions = mutable.Map[String,ArrayBuffer[String]]()
+        val descriptions = new util.LinkedHashMap[String,ArrayBuffer[String]]().asScala
         for {
           cg <- captionGroups
           cs <- cg.captions

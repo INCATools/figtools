@@ -4,6 +4,7 @@ import com.github.davidmoten.rtree.geometry.{Geometries, Rectangle}
 import figtools.ImageSegmenter.ImageSegment
 import ij.ImagePlus
 import ij.gui.Roi
+import de.sciss.equal.Implicits._
 
 trait ImageSegmenter {
   def segment(imp: ImagePlus): Seq[ImageSegment]
@@ -18,7 +19,13 @@ object ImageSegmenter {
     def toRect: Rectangle = Geometries.rectangle(x.toFloat, y.toFloat, x2.toFloat, y2.toFloat)
     def toRoi: Roi = new Roi(x.toDouble, y.toDouble, width.toDouble, height.toDouble)
   }
-  case class ImageSegment(imp: ImagePlus, box: Box[Int])
+  case class ImageSegment(imp: ImagePlus, box: Box[Int]) {
+    override def equals( arg:Any): Boolean = arg match {
+      case s: ImageSegment => s.box === box
+      case _ => false
+    }
+    override def hashCode(): Int = box.hashCode
+  }
 
   def segment(imp_ : ImagePlus)(implicit log: ImageLog): Seq[ImageSegment] = {
     val imp = imp_.duplicate()

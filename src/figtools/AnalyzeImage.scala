@@ -42,6 +42,7 @@ class AnalyzeImage
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
   val logger = Logger(getClass.getSimpleName)
   val Epsilon = 0.001
+  val BetterConfidence = 10.0
 
   case class SegmentDescription(label: String, labelIndex: Int, word: Option[Word], segIndex: Int)
 
@@ -342,7 +343,7 @@ class AnalyzeImage
           logger.info(s"""Please close image window "${imp.getTitle}" to load next image...""")
 
           // wait for user to close the image
-          while (imp.isVisible) Thread.sleep(200)
+          while (WindowManager.getWindowCount > 0) Thread.sleep(200)
 
           // clean up ROI list
           RoiManager.getRoiManager.reset()
@@ -393,15 +394,21 @@ class AnalyzeImage
             // is sd a more valid candidate than the existing ssd?
             case Some(ssd) =>
               logger.info(s"Comparing sd=${pp(sd)} (segmentOrder=${segmentOrder(sd.segIndex)}) with ssd=${pp(ssd)} (segmentOrder=${segmentOrder(ssd.segIndex)})")
-              // 1. if the label is the only label in a segment
-              if (labelAssignments.get(sd.segIndex).map { _.size }.getOrElse(0) + 1 <
+              // if the confidence is much greater
+              if (sd.word.map { _.getConfidence }.getOrElse(0f) -
+                ssd.word.map { _.getConfidence }.getOrElse(0f) >= BetterConfidence ||
+                (math.abs(sd.word.map { _.getConfidence }.getOrElse(0f) -
+                  ssd.word.map { _.getConfidence }.getOrElse(0f)) < BetterConfidence) && (
+                // or, if the label is the only label in a segment
+                labelAssignments.get(sd.segIndex).map { _.size }.getOrElse(0) + 1 <
                 labelAssignments.get(ssd.segIndex).map { _.size }.getOrElse(0) ||
                 (labelAssignments.get(sd.segIndex).map { _.size }.getOrElse(0) + 1 ===
                   labelAssignments.get(ssd.segIndex).map { _.size }.getOrElse(0) && (
+                  // or, if the confidence is greater
                   sd.word.map { _.getConfidence }.getOrElse(0f) -
                     ssd.word.map { _.getConfidence }.getOrElse(0f) >= Epsilon ||
                     (math.abs(sd.word.map { _.getConfidence }.getOrElse(0f) -
-                      ssd.word.map { _.getConfidence }.getOrElse(0f)) < Epsilon))))
+                      ssd.word.map { _.getConfidence }.getOrElse(0f)) < Epsilon)))))
               {
                 logger.info(s"Overwriting ssd with sd")
                 // remove the old label assignment

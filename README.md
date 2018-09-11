@@ -36,7 +36,7 @@ brew install sbt tesseract
 Next, in the top-level `figtools` directory, run:
 
 ```
-sbt updatePrependScript package
+sbt package
 ```
 
 Now in the `figtools/bin`, directory, run the `figtools` script.

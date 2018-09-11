@@ -4,15 +4,12 @@ import java.util.Properties
 import java.util.regex.Pattern
 
 import better.files._
-import com.typesafe.scalalogging.Logger
 import edu.stanford.nlp.ling.CoreAnnotations.SentencesAnnotation
 import edu.stanford.nlp.pipeline.{Annotation, StanfordCoreNLP}
 
 import collection.JavaConverters._
 import edu.stanford.nlp.util.logging.RedwoodConfiguration
 import figtools.ImageSegmenter.ImageSegment
-import ij.{IJ, ImageJ, WindowManager}
-import ij.io.Opener
 import net.sourceforge.tess4j.ITessAPI.TessPageIteratorLevel
 
 import util.control.Breaks._
@@ -33,14 +30,22 @@ import org.apache.pdfbox.rendering.{ImageType, PDFRenderer}
 import org.apache.pdfbox.tools.imageio.ImageIOUtil
 import java.io.IOException
 
+import ij.IJ
+import ij.io.Opener
+import net.imagej.ImageJ
+import scribe.{Level, Logger}
+
 class AnalyzeImage
 ( edgeDetector: String = "imagej",
   pdfExportResolution: Int = 300,
   dir: File = file".",
-  ids: Seq[String])(implicit log: ImageLog)
+  ids: Seq[String],
+  debug: Boolean = false)(implicit log: ImageLog)
 {
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
-  val logger = Logger(getClass.getSimpleName)
+  var logger = Logger(getClass.getSimpleName).
+    withHandler(minimumLevel=Some(if (debug) Level.Debug else Level.Info))
+
   val Epsilon = 0.001
   val BetterConfidence = 10.0
 
@@ -61,8 +66,7 @@ class AnalyzeImage
   val pipeline = new StanfordCoreNLP(props)
 
   // start an embedded ImageJ instance
-  val imagej = new ImageJ(ImageJ.EMBEDDED)
-  imagej.exitWhenQuitting(true)
+  val imagej = new ImageJ()
 
   case class LabelResult(descriptions: Seq[String], rois: Seq[Roi])
   type LabelResults = collection.Map[String, LabelResult]
@@ -93,28 +97,28 @@ class AnalyzeImage
     val datapackage = dir/id/"datapackage.json"
     val json = Zeison.parse(datapackage.contentAsString)
     val description_nohtml = json.description_nohtml.toStr
-    logger.info(s"file=$datapackage")
-    logger.info(s"description_nohtml=\n$description_nohtml")
+    logger.debug(s"file=$datapackage")
+    logger.debug(s"description_nohtml=\n$description_nohtml")
 
     val document = new Annotation(description_nohtml)
     pipeline.annotate(document)
     val sentences = document.get(classOf[SentencesAnnotation])
 
     for (sentence <- sentences.asScala) {
-      logger.info(s"sentence=${sentence.toString}")
+      logger.debug(s"sentence=${sentence.toString}")
     }
-    logger.info("")
+    logger.debug("")
 
     val results = new util.LinkedHashMap[String, LabelResults].asScala
     val resources = json.resources.toList
     for (resource <- resources) {
       breakable {
-        WindowManager.closeAllWindows()
+        if (debug) imagej.window.getOpenWindows.asScala.foreach{imagej.window.remove(_)}
 
         val name = resource.name.toStr
         val imageFile = datapackage.parent / name
         if (!imageFile.toString.matches("""(?i).*\.(png|jpe?g|tiff?|pdf)""")) {
-          logger.info(s"Skipping non-image file $imageFile")
+          logger.debug(s"Skipping non-image file $imageFile")
           break
         }
         val imageFiles = ArrayBuffer(imageFile)
@@ -144,7 +148,7 @@ class AnalyzeImage
               f.name.toString.matches(raw"""^${Pattern.quote(imageFile.name.toString)}(-[0-9]+)?\.png$$"""))
             imageFiles ++= outimages
             if (imageFiles.isEmpty) {
-              logger.info(s"File $imageFile contains no images, skipping")
+              logger.debug(s"File $imageFile contains no images, skipping")
               break
             }
           }
@@ -155,7 +159,7 @@ class AnalyzeImage
 
         // TODO: handle checking multiple caption groups, not just the highest-scoring one
         val captionGroups = CaptionSegmenter.segmentCaption(description_nohtml).take(1)
-        logger.info(s"captionGroups=${pp(captionGroups)}")
+        logger.debug(s"captionGroups=${pp(captionGroups)}")
         val hasCaptions = captionGroups.
           flatMap { cg => cg.captions }.
           flatMap { cs => cs.label }.
@@ -169,7 +173,7 @@ class AnalyzeImage
 
         val imageFileName = imageFiles.head.toString
         IJ.redirectErrorMessages(true)
-        logger.info(s"Opening image file $imageFileName")
+        logger.debug(s"Opening image file $imageFileName")
         val imp = new Opener().openImage(imageFileName)
         if (imp === null) {
           logger.warn(s"Could not open image file $imageFile, skipping")
@@ -207,7 +211,7 @@ class AnalyzeImage
           //       w.getBoundingBox.width,
           //       w.getBoundingBox.height)
           //   }: _*)
-          logger.info(s"seg$i words: ${pp(words)}")
+          logger.debug(s"seg$i words: ${pp(words)}")
           log(imp, s"[FigTools] Run tesseract OCR on seg$i (overview)",
             Seq(s"seg$i" -> segment.box.toRoi) ++
               words.map { w =>
@@ -222,7 +226,7 @@ class AnalyzeImage
             val confidence = word.getConfidence
             val text = word.getText
             val captionGroups = CaptionSegmenter.segmentCaption(text)
-            logger.info(s"Tesseract OCR seg$i text: (box: ${pp((box.x, box.y, box.width, box.height))}, confidence: ${pp(confidence)}, text: ${pp(text)}, captionGroups: ${pp(captionGroups)}")
+            logger.debug(s"Tesseract OCR seg$i text: (box: ${pp((box.x, box.y, box.width, box.height))}, confidence: ${pp(confidence)}, text: ${pp(text)}, captionGroups: ${pp(captionGroups)}")
             for {
               captionGroup <- captionGroups
               caption <- captionGroup.captions
@@ -232,14 +236,14 @@ class AnalyzeImage
               val index = caption.index(li)
               val ucLabel = label.toUpperCase
               if (hasCaptions.contains(ucLabel)) {
-                logger.info(s"Assigning label $label to segment seg$i}")
+                logger.debug(s"Assigning label $label to segment seg$i}")
                 segmentDescriptions.getOrElseUpdate(i, mutable.SortedSet()) +=
                   SegmentDescription(ucLabel, index, Some(word), i)
               }
             }
           }
         }
-        logger.info(s"segmentDescriptions=${pp(segmentDescriptions)}")
+        logger.debug(s"segmentDescriptions=${pp(segmentDescriptions)}")
 
         // 2. discover highest scoring layout order:
         //     lrtb tblr rltb tbrl lrbt btlr rlbt btrl
@@ -296,13 +300,13 @@ class AnalyzeImage
               }
             }
           }
-          logger.info(s"orderedIdx=$orderedIdx, updatedSegDescs=${pp(updatedSegDescs)}, ordered=${pp(ordered)}, score=$score")
+          logger.debug(s"orderedIdx=$orderedIdx, updatedSegDescs=${pp(updatedSegDescs)}, ordered=${pp(ordered)}, score=$score")
           (updatedSegDescs, ordered, score)
         }).sortBy { -_._3 }.
           headOption.
           getOrElse((segmentDescriptions, orderSegments(segments), 0))
 
-        logger.info(s"bestFixedSegDescrs=${pp(bestFixedSegDescrs)}")
+        logger.debug(s"bestFixedSegDescrs=${pp(bestFixedSegDescrs)}")
         log(imp, s"best segment order, score $bestScore",
           bestOrder.zipWithIndex.map{case (s,o)=> s"$o seg$s"->segments(s).box.toRoi}: _*)
 
@@ -339,7 +343,7 @@ class AnalyzeImage
           }
         }
         val mergedSegments = rtree.entries.toBlocking.getIterator.asScala.toSeq
-        logger.info(s"mergedSegments=${pp(mergedSegments)}")
+        logger.debug(s"mergedSegments=${pp(mergedSegments)}")
 
         // show
         val captionLabels = ArrayBuffer[(String, Roi)]()
@@ -363,10 +367,10 @@ class AnalyzeImage
           }
         }
         log(imp, "[FigTools] Show caption labels", captionLabels: _*)
-        logger.info(s"captionGroups=${pp(captionGroups)}")
-        logger.info(s"bestFixedSegDescrs=${pp(bestFixedSegDescrs)}")
+        logger.debug(s"captionGroups=${pp(captionGroups)}")
+        logger.debug(s"bestFixedSegDescrs=${pp(bestFixedSegDescrs)}")
 
-        logger.info(s"""Please close image window "${imp.getTitle}" to load next image...""")
+        logger.debug(s"""Please close image window "${imp.getTitle}" to load next image...""")
 
         // add to results map
         val descriptions = new util.LinkedHashMap[String,ArrayBuffer[String]]().asScala
@@ -391,7 +395,9 @@ class AnalyzeImage
           map{s=> s->LabelResult(descriptions.getOrElse(s, Seq()), captions.getOrElse(s, Seq()))}.toMap
 
         // wait for user to close the image
-        while (WindowManager.getWindowCount > 0) Thread.sleep(200)
+        if (debug) {
+          while (imagej.window.getOpenWindows.size > 0) Thread.sleep(200)
+        }
 
         // clean up ROI list
         RoiManager.getRoiManager.reset()
@@ -434,14 +440,14 @@ class AnalyzeImage
       val (_, rest2) = rest.
         span { i => segmentDescriptions.getOrElse(i, Seq()).isEmpty }
 
-      logger.info(s"ordered=${pp(ordered)}, segmentOrder=${pp(segmentOrder)}, labelAssignments=${pp(labelAssignments)}")
+      logger.debug(s"ordered=${pp(ordered)}, segmentOrder=${pp(segmentOrder)}, labelAssignments=${pp(labelAssignments)}")
       for (i <- firstLabeled) {
         val sds = segmentDescriptions.getOrElse(i, Seq())
         for (sd <- sds) {
           seenLabel.get(sd.label) match {
             // is sd a more valid candidate than the existing ssd?
             case Some(ssd) =>
-              logger.info(s"Comparing sd=${pp(sd)} (segmentOrder=${segmentOrder(sd.segIndex)}) with ssd=${pp(ssd)} (segmentOrder=${segmentOrder(ssd.segIndex)})")
+              logger.debug(s"Comparing sd=${pp(sd)} (segmentOrder=${segmentOrder(sd.segIndex)}) with ssd=${pp(ssd)} (segmentOrder=${segmentOrder(ssd.segIndex)})")
               // if the confidence is much greater
               if (sd.word.map { _.getConfidence }.getOrElse(0f) -
                 ssd.word.map { _.getConfidence }.getOrElse(0f) >= BetterConfidence ||
@@ -458,7 +464,7 @@ class AnalyzeImage
                     (math.abs(sd.word.map { _.getConfidence }.getOrElse(0f) -
                       ssd.word.map { _.getConfidence }.getOrElse(0f)) < Epsilon)))))
               {
-                logger.info(s"Overwriting ssd with sd")
+                logger.debug(s"Overwriting ssd with sd")
                 // remove the old label assignment
                 labelAssignments += ssd.segIndex -> (labelAssignments.getOrElse(ssd.segIndex, SortedSet()) - ssd)
                 // add the new label assignment
@@ -467,7 +473,7 @@ class AnalyzeImage
                 seenLabel += sd.label -> sd
               }
               else {
-                logger.info(s"NOT overwriting ssd with sd")
+                logger.debug(s"NOT overwriting ssd with sd")
               }
             case None =>
               // add new label assignment and seenLabel entry
@@ -494,21 +500,21 @@ class AnalyzeImage
 
       // add interpolated missing segment labels
       if (unlabeled.nonEmpty && captions.nonEmpty) {
-        logger.info(s"analyzing unlabeled segments ${pp(unlabeled)}")
+        logger.debug(s"analyzing unlabeled segments ${pp(unlabeled)}")
         // get the range to interpolate
         val firstLabel = firstLabeled.lastOption.
           map { i => labelAssignments(i).map {s=> (s.label, s.labelIndex)}.max}.
           getOrElse(captions.head)
-        logger.info(s"firstLabel=$firstLabel")
+        logger.debug(s"firstLabel=$firstLabel")
         val lastLabel = lastLabeled.headOption.
           map { i => labelAssignments(i).map {s=> (s.label, s.labelIndex)}.min}.
           getOrElse(captions.last)
-        logger.info(s"lastLabel=$lastLabel")
+        logger.debug(s"lastLabel=$lastLabel")
 
         val firstLabelIdx = captions.indexWhere(_._1 === firstLabel._1)
-        logger.info(s"firstLabelIdx=$firstLabelIdx")
+        logger.debug(s"firstLabelIdx=$firstLabelIdx")
         val lastLabelIdx = captions.indexWhere(_._1 === lastLabel._1)
-        logger.info(s"lastLabelIdx=$lastLabelIdx")
+        logger.debug(s"lastLabelIdx=$lastLabelIdx")
         var missingCaptions =
           if (firstLabelIdx === lastLabelIdx) Seq(firstLabel)
           else if (firstLabelIdx >= 0 && lastLabelIdx >= 0 && firstLabelIdx < lastLabelIdx)
@@ -520,7 +526,7 @@ class AnalyzeImage
             span { _._1 !== firstLabel._1 }._1.
             reverse
         if (missingCaptions.size > 1) missingCaptions = missingCaptions.drop(1)
-        logger.info(s"missingCaptions=$missingCaptions")
+        logger.debug(s"missingCaptions=$missingCaptions")
 
         // make missing captions
         val interpolated = unlabeled.zipWithIndex.flatMap { case (ui, uii) =>
@@ -530,10 +536,10 @@ class AnalyzeImage
           val ret = if (mc.nonEmpty)
             Seq(ui -> SortedSet(mc.map { c => SegmentDescription(c._1, c._2, None, ui) }: _*))
           else Seq()
-          logger.info(s"ui=$ui, uii=$uii, startSlice=$startSlice, endSlice=$endSlice, mc=${pp(mc)}, ret=${pp(ret)}")
+          logger.debug(s"ui=$ui, uii=$uii, startSlice=$startSlice, endSlice=$endSlice, mc=${pp(mc)}, ret=${pp(ret)}")
           ret
         }.toMap
-        logger.info(s"interpolated=$interpolated")
+        logger.debug(s"interpolated=$interpolated")
         // make sure the missing captions should be used
         // do not overwrite any existing captions
         for {
@@ -541,7 +547,7 @@ class AnalyzeImage
           sd <- sds
         } {
           // add new label assignment and seenLabel entry
-          logger.info(s"Adding label ${pp(sd)} to segment $i")
+          logger.debug(s"Adding label ${pp(sd)} to segment $i")
           labelAssignments += i->(labelAssignments.getOrElse(i, SortedSet()) + sd)
           seenLabel += sd.label->sd
         }

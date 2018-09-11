@@ -2,7 +2,7 @@ package figtools
 
 import figtools.ImageSegmenter.ImageSegment
 import ij.ImagePlus
-import com.typesafe.scalalogging.Logger
+import scribe.Logger
 import de.sciss.equal.Implicits._
 
 class StitchedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {

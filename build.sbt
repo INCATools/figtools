@@ -34,7 +34,7 @@ lazy val figtools = (project in file(".")).
     resolvers += Resolver.sonatypeRepo("snapshots"),
     libraryDependencies ++= Seq(
       "com.github.alexarchambault" %% "case-app" % "2.0.0-M3",
-      "net.imagej" % "ij" % "1.52c",
+      "net.imagej" % "imagej" % "2.0.0-rc-68",
       "net.sourceforge.tess4j" % "tess4j" % "3.4.0",
       "edu.stanford.nlp" % "stanford-corenlp" % "3.8.0",
       "edu.stanford.nlp" % "stanford-corenlp" % "3.8.0" classifier "models-english",
@@ -42,8 +42,7 @@ lazy val figtools = (project in file(".")).
       "org.tensorflow" % "tensorflow" % "1.2.1",
       "com.beachape" %% "enumeratum" % "1.5.12",
       "com.lihaoyi" %% "fastparse" % "1.0.0",
-      "ch.qos.logback" % "logback-classic" % "1.2.3",
-      "com.typesafe.scala-logging" %% "scala-logging" % "3.7.2",
+      "com.outr" %% "scribe" % "2.6.0",
       "com.lihaoyi" %% "pprint" % "0.5.3",
       "org.openimaj" % "image-processing" % "1.3.6",
       "org.tsers.zeison" %% "zeison" % "0.8.0-SNAPSHOT",
@@ -77,7 +76,7 @@ lazy val figtools = (project in file(".")).
 ${"""PCTMEMORY=${PCTMEMORY-75}
 MEMORY=${MEMORY-$(m=$(sysctl -n hw.memsize 2>/dev/null || free -b|perl -0777 -ne 'print [/^Mem:\s+([0-9]+)/ms]->[0]' 2>/dev/null ||true); [[ -n $m ]] && echo $(( m * $PCTMEMORY / 100 / 1048576 ))m)}"""}
 ${depsScript.mkString("\n")}
-TF_CPP_MIN_LOG_LEVEL=3 exec java $${DEBUG+-agentlib:jdwp=transport=dt_socket,server=y,address=$DebugPort,suspend=n} -noverify -XX:+UseG1GC "-Xmx$$MEMORY" $$JAVA_OPTS -cp "$$0:${deps.mkString(":")}" "${(mainClass in Compile).value.get}" "$$@"
+TF_CPP_MIN_LOG_LEVEL=3 exec java $${DEBUG+-agentlib:jdwp=transport=dt_socket,server=y,address=$DebugPort,suspend=n} -noverify -XX:+UseG1GC "-Xmx$$MEMORY" $$JAVA_OPTS $${DEBUG- -Djava.awt.headless=true -Dapple.awt.UIElement=true} -cp "$$0:${deps.mkString(":")}" "${(mainClass in Compile).value.get}" "$$@"
 """
       val prependScript = (baseDirectory.value / "target" / s"${(mainClass in Compile).value.get}.prependShellScript.sh").toString
       Files.write(Paths.get(prependScript), prependShellScript.getBytes(StandardCharsets.UTF_8))

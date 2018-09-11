@@ -4,7 +4,7 @@ import ij.process.FloatProcessor
 import ij.{IJ, ImagePlus}
 import org.openimaj.image.FImage
 import org.openimaj.image.processing.edges.SUSANEdgeDetector
-import com.typesafe.scalalogging.Logger
+import scribe.Logger
 
 object EdgeDetectors {
   val logger = Logger(getClass.getSimpleName)

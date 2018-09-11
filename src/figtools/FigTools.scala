@@ -1,10 +1,9 @@
 package figtools
-import com.typesafe.scalalogging.Logger
+import scribe.Logger
 import org.tsers.zeison.Zeison
 import better.files._
 import caseapp._
 import caseapp.core.help.WithHelp
-import ij.IJ
 
 sealed abstract class Main extends Product with Serializable
 
@@ -50,6 +49,8 @@ final case class Analyze(
 ) extends Main
 
 object FigTools extends CommandApp[Main] {
+  val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
+
   override def appName: String = "FigTools"
   override def appVersion: String = "0.1.0"
   override def progName: String = "figtools"
@@ -122,8 +123,15 @@ object FigTools extends CommandApp[Main] {
       case analyze: Analyze =>
         edgeDetector = analyze.edgeDetector
         pdfExportResolution = analyze.pdfExportResolution
-        implicit val log = ImageLog(showLog=true)
-        new AnalyzeImage(analyze.edgeDetector, analyze.pdfExportResolution, analyze.dir.toFile, args.remaining).analyze()
+        val debug = sys.env.contains("DEBUG")
+        implicit val log = ImageLog(showLog=debug)
+        val results = new AnalyzeImage(
+          analyze.edgeDetector,
+          analyze.pdfExportResolution,
+          analyze.dir.toFile,
+          args.remaining,
+          debug).analyze()
+        logger.info(s"results=${pp(results)}")
     }
   }
 }

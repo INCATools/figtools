@@ -1,6 +1,6 @@
 package figtools
 
-import com.typesafe.scalalogging.Logger
+import scribe.Logger
 import ij.gui.Roi
 import ij.plugin.frame.RoiManager
 import ij.process.Blitter

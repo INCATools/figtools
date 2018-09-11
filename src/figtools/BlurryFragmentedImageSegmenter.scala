@@ -2,7 +2,7 @@ package figtools
 
 import figtools.ImageSegmenter.ImageSegment
 import ij.{IJ, ImagePlus}
-import com.typesafe.scalalogging.Logger
+import scribe.Logger
 
 import scala.util.control.Breaks._
 import de.sciss.equal.Implicits._

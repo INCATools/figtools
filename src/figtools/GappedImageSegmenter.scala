@@ -1,6 +1,6 @@
 package figtools
 
-import com.typesafe.scalalogging.Logger
+import scribe.Logger
 import figtools.ImageSegmenter.ImageSegment
 import ij.ImagePlus
 import ij.measure.Measurements

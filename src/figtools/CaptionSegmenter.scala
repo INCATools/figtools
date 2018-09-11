@@ -5,7 +5,7 @@ import fastparse.all._
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
-import com.typesafe.scalalogging.Logger
+import scribe.Logger
 
 import scala.collection.immutable
 import de.sciss.equal.Implicits._

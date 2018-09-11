@@ -43,317 +43,356 @@ class AnalyzeImage
   val logger = Logger(getClass.getSimpleName)
   val Epsilon = 0.001
   val BetterConfidence = 10.0
-  val MinOrderOverlapPct = 80.0
 
-  case class SegmentDescription(label: String, labelIndex: Int, word: Option[Word], segIndex: Int)
+  case class SegmentDescription
+  (label: String,
+   labelIndex: Int,
+   word: Option[Word],
+   segIndex: Int)
+
+  if (!FigTools.edgeDetectors.contains(edgeDetector)) {
+    Console.err.println(s"Unknown edge detector module: $edgeDetector")
+    sys.exit(1)
+  }
+  // turn off CoreNLP logging
+  RedwoodConfiguration.current.clear.apply()
+  val props = new Properties()
+  props.setProperty("annotators", "tokenize, ssplit, pos, lemma, ner, parse, dcoref")
+  val pipeline = new StanfordCoreNLP(props)
+
+  // start an embedded ImageJ instance
+  val imagej = new ImageJ(ImageJ.EMBEDDED)
+  imagej.exitWhenQuitting(true)
 
   def analyze() {
-    if (!FigTools.edgeDetectors.contains(edgeDetector)) {
-      Console.err.println(s"Unknown edge detector module: $edgeDetector")
-      sys.exit(1)
-    }
-    // turn off CoreNLP logging
-    RedwoodConfiguration.current.clear.apply()
-    val props = new Properties()
-    props.setProperty("annotators", "tokenize, ssplit, pos, lemma, ner, parse, dcoref")
-    val pipeline = new StanfordCoreNLP(props)
-
-    // start an embedded ImageJ instance
-    val imagej = new ImageJ(ImageJ.EMBEDDED)
-    imagej.exitWhenQuitting(true)
-
     val iter = if (ids.nonEmpty)
-      ids.iterator.flatMap{i=>(dir / i).listRecursively}
-    else dir.listRecursively
-    for (datapackage <- iter.filter(_.name === "datapackage.json")) {
-      val id = datapackage.parent.toString
-      val json = Zeison.parse(datapackage.contentAsString)
-      val description_nohtml = json.description_nohtml.toStr
-      logger.info(s"file=$datapackage")
-      logger.info(s"description_nohtml=\n$description_nohtml")
-
-      val document = new Annotation(description_nohtml)
-      pipeline.annotate(document)
-      val sentences = document.get(classOf[SentencesAnnotation])
-
-      for (sentence <- sentences.asScala) {
-        logger.info(s"sentence=${sentence.toString}")
+    // download the files if the directory does not exist
+      ids.iterator.map { i =>
+        val d = dir / i
+        if (!d.exists) new FigShareApi().download(i, dir.toString)
+        i
       }
-      logger.info("")
+    // find all
+    else dir.list.
+      filter { i => i.name.matches("[0-9]+") && (i / "datapackage.json").exists }.
+      map { _.name }
+    for (id <- iter) {
+      analyzeImages(id)
+    }
+  }
 
-      val resources = json.resources.toList
-      for (resource <- resources) {
-        breakable {
-          WindowManager.closeAllWindows()
+  def analyzeImages(id: String): collection.Map[String, collection.Map[String, (Seq[String], Seq[Roi])]] = {
+    val datapackage = dir/id/"datapackage.json"
+    val json = Zeison.parse(datapackage.contentAsString)
+    val description_nohtml = json.description_nohtml.toStr
+    logger.info(s"file=$datapackage")
+    logger.info(s"description_nohtml=\n$description_nohtml")
 
-          val name = resource.name.toStr
-          val imageFile = datapackage.parent / name
-          if (!imageFile.toString.matches("""(?i).*\.(png|jpe?g|tiff?|pdf)""")) {
-            logger.info(s"Skipping non-image file $imageFile")
-            break
-          }
-          val imageFiles = ArrayBuffer(imageFile)
-          if (imageFile.exists) {
-            // use the convert command-line tool to convert PDF files to image files
-            if (imageFile.extension.isDefined && imageFile.extension.get.toLowerCase === ".pdf") {
-              imageFiles.clear()
-              for (document <- PDDocument.load(imageFile.toJava).autoClosed) {
-                if (document.getNumberOfPages > 1) {
-                  logger.warn(s"File $imageFile contains more than one image, skipping")
-                  break
-                }
-                try {
-                  val pdfRenderer = new PDFRenderer(document)
-                  for (page <- 0 until document.getNumberOfPages) {
-                    val bim = pdfRenderer.renderImageWithDPI(page, pdfExportResolution, ImageType.RGB)
-                    ImageIOUtil.writeImage(bim, s"$imageFile.png", pdfExportResolution)
-                  }
-                }
-                catch {
-                  case e: IOException =>
-                    Console.err.println("Exception while trying to create pdf document - " + e)
-                }
-              }
-              val pngs = datapackage.parent.glob("*.png")
-              val outimages = pngs.filter(f =>
-                f.name.toString.matches(raw"""^${Pattern.quote(imageFile.name.toString)}(-[0-9]+)?\.png$$"""))
-              imageFiles ++= outimages
-              if (imageFiles.isEmpty) {
-                logger.info(s"File $imageFile contains no images, skipping")
+    val document = new Annotation(description_nohtml)
+    pipeline.annotate(document)
+    val sentences = document.get(classOf[SentencesAnnotation])
+
+    for (sentence <- sentences.asScala) {
+      logger.info(s"sentence=${sentence.toString}")
+    }
+    logger.info("")
+
+    val results = mutable.Map[String, collection.Map[String, (Seq[String], Seq[Roi])]]()
+    val resources = json.resources.toList
+    for (resource <- resources) {
+      breakable {
+        WindowManager.closeAllWindows()
+
+        val name = resource.name.toStr
+        val imageFile = datapackage.parent / name
+        if (!imageFile.toString.matches("""(?i).*\.(png|jpe?g|tiff?|pdf)""")) {
+          logger.info(s"Skipping non-image file $imageFile")
+          break
+        }
+        val imageFiles = ArrayBuffer(imageFile)
+        if (imageFile.exists) {
+          // use the convert command-line tool to convert PDF files to image files
+          if (imageFile.extension.isDefined && imageFile.extension.get.toLowerCase === ".pdf") {
+            imageFiles.clear()
+            for (document <- PDDocument.load(imageFile.toJava).autoClosed) {
+              if (document.getNumberOfPages > 1) {
+                logger.warn(s"File $imageFile contains more than one image, skipping")
                 break
               }
-            }
-          }
-          else {
-            Console.err.println(s"Could not find file $imageFile")
-          }
-
-          // TODO: handle checking multiple caption groups, not just the highest-scoring one
-          val captionGroups = CaptionSegmenter.segmentCaption(description_nohtml).take(1)
-          logger.info(s"captionGroups=${pp(captionGroups)}")
-          val hasCaptions = captionGroups.
-            flatMap { cg => cg.captions }.
-            flatMap { cs => cs.label }.
-            map {
-              _.toUpperCase
-            }.toSet
-          if (hasCaptions.size <= 1) {
-            logger.warn(s"File $imageFile only has a single caption, no need to segment the image.")
-            break
-          }
-
-          val imageFileName = imageFiles.head.toString
-          IJ.redirectErrorMessages(true)
-          logger.info(s"Opening image file $imageFileName")
-          val imp = new Opener().openImage(imageFileName)
-          if (imp === null) {
-            logger.warn(s"Could not open image file $imageFile, skipping")
-            break
-          }
-          imp.setTitle(s"$id: ${imp.getTitle}")
-          log(imp, "[AnalyzeImage] original image")
-
-
-          implicit def sdOrder: Ordering[SegmentDescription] =
-            Ordering.by(sd => (sd.segIndex, sd.labelIndex))
-
-          val segmentDescriptions = mutable.Map[Int, mutable.SortedSet[SegmentDescription]]()
-
-          val segments = ImageSegmenter.segment(imp)
-          log(imp, "[AnalyzeImage] split into segments",
-            segments.zipWithIndex.map { case (s, i) => s"seg$i" -> s.box.toRoi }: _*)
-          for ((segment, i) <- segments.zipWithIndex) {
-            val cropped = imp.duplicate()
-            cropped.setRoi(segment.box.toRoi)
-            IJ.run(cropped, "Crop", "")
-            //log(cropped, s"[FigTools] cropped segment seg$i")
-            // use tesseract OCR
-            val instance = new Tesseract()
-            val bi = cropped.getBufferedImage
-            //log(new ImagePlus(cropped.getTitle,bi), s"[FigTools] bufferedImage seg$i")
-            val words = instance.getWords(bi, TessPageIteratorLevel.RIL_WORD).asScala.
-              sortBy(x => (-(x.getBoundingBox.width * x.getBoundingBox.height), -x.getConfidence))
-            // log(new ImagePlus(cropped.getTitle, bi),
-            //   s"[AnalyzeImage] Run tesseract OCR on seg$i (segment only)",
-            //   words.map { w =>
-            //     w.getText -> new Roi(
-            //       w.getBoundingBox.x,
-            //       w.getBoundingBox.y,
-            //       w.getBoundingBox.width,
-            //       w.getBoundingBox.height)
-            //   }: _*)
-            logger.info(s"seg$i words: ${pp(words)}")
-            log(imp, s"[FigTools] Run tesseract OCR on seg$i (overview)",
-              Seq(s"seg$i" -> segment.box.toRoi) ++
-                words.map { w =>
-                  w.getText -> new Roi(
-                    w.getBoundingBox.x + segment.box.x,
-                    w.getBoundingBox.y + segment.box.y,
-                    w.getBoundingBox.width,
-                    w.getBoundingBox.height)
-                }: _*)
-            for (word <- words) {
-              val box = word.getBoundingBox
-              val confidence = word.getConfidence
-              val text = word.getText
-              val captionGroups = CaptionSegmenter.segmentCaption(text)
-              logger.info(s"Tesseract OCR seg$i text: (box: ${pp((box.x, box.y, box.width, box.height))}, confidence: ${pp(confidence)}, text: ${pp(text)}, captionGroups: ${pp(captionGroups)}")
-              for {
-                captionGroup <- captionGroups
-                caption <- captionGroup.captions
-                li <- caption.label.indices
-              } {
-                val label = caption.label(li)
-                val index = caption.index(li)
-                val ucLabel = label.toUpperCase
-                if (hasCaptions.contains(ucLabel)) {
-                  logger.info(s"Assigning label $label to segment seg$i}")
-                  segmentDescriptions.getOrElseUpdate(i, mutable.SortedSet()) +=
-                    SegmentDescription(ucLabel, index, Some(word), i)
+              try {
+                val pdfRenderer = new PDFRenderer(document)
+                for (page <- 0 until document.getNumberOfPages) {
+                  val bim = pdfRenderer.renderImageWithDPI(page, pdfExportResolution, ImageType.RGB)
+                  ImageIOUtil.writeImage(bim, s"$imageFile.png", pdfExportResolution)
                 }
               }
-            }
-          }
-          logger.info(s"segmentDescriptions=${pp(segmentDescriptions)}")
-
-          // 2. discover highest scoring layout order:
-          //     lrtb tblr rltb tbrl lrbt btlr rlbt btrl
-          // TODO: 8 zigzag patterns
-          val xmax = segments.map { _.box.x2 }.max
-          val ymax = segments.map { _.box.y2 }.max
-          val orderedCaptions = captionGroups.
-            flatMap { cg => cg.captions }.
-            flatMap { cs => cs.label }.
-            map { _.toUpperCase }.
-            zip(captionGroups.
-              flatMap { cg => cg.captions }.
-              flatMap { cs => cs.index }).
-            sortBy { case (_, i) => i }
-          val (bestFixedSegDescrs, bestOrder, bestScore) = (for {
-            (ordered, orderedIdx) <- Seq(
-              orderSegments(segments),
-              orderSegments(segments.map { s => ImageSegment(s.imp,
-                ImageSegmenter.Box(s.box.y, s.box.x, s.box.y2, s.box.x2)) }),
-              orderSegments(segments.map { s => ImageSegment(s.imp,
-                ImageSegmenter.Box(xmax - s.box.x2, s.box.y, xmax - s.box.x, s.box.y2)) }),
-              orderSegments(segments.map { s => ImageSegment(s.imp,
-                ImageSegmenter.Box(s.box.y, xmax - s.box.x2, s.box.y2, xmax - s.box.x)) }),
-              orderSegments(segments.map { s => ImageSegment(s.imp,
-                ImageSegmenter.Box(s.box.x, ymax - s.box.y2, s.box.x2, ymax - s.box.y)) }),
-              orderSegments(segments.map { s => ImageSegment(s.imp,
-                ImageSegmenter.Box(ymax - s.box.y2, s.box.x, ymax - s.box.y, s.box.x2)) }),
-              orderSegments(segments.map { s => ImageSegment(s.imp,
-                ImageSegmenter.Box(xmax - s.box.x2, ymax - s.box.y2, xmax - s.box.x, ymax - s.box.y)) }),
-              orderSegments(segments.map { s => ImageSegment(s.imp,
-                ImageSegmenter.Box(ymax - s.box.y2, xmax - s.box.x2, ymax - s.box.y, xmax - s.box.x)) }),
-            ).zipWithIndex
-          } yield {
-            val updatedSegDescs = findCaptions(orderedCaptions, ordered, segmentDescriptions)
-
-            var score = -orderedIdx
-            val captionOrder = orderedCaptions.map{_._1}.zipWithIndex.toMap
-            for ((_, sds) <- updatedSegDescs.toSeq.sortBy{_._1}) {
-              val sdsSeq = sds.toSeq
-              // reward segments with only one label to discourage undersegmentation
-              if (sdsSeq.size === 1) score += 1000
-              for ((sd, sdsIndex) <- sdsSeq.zipWithIndex) {
-                val sdo = captionOrder(sd.label)
-                if (sdsIndex < sdsSeq.size - 1) {
-                  val nextSd = sdsSeq(sdsIndex + 1)
-                  val next = captionOrder(nextSd.label)
-                  // reward when the next segment's caption is the next in sequence
-                  if (next - sdo === 1) score += 1000
-                  // smaller reward when the next segment's caption is in the right direction,
-                  // even if it skips
-                  else if (next > sdo) score += 100
-                  // penalty if the next segment's caption is in the wrong direction
-                  else if (next < sdo) score -= 1000
-                }
+              catch {
+                case e: IOException =>
+                  Console.err.println("Exception while trying to create pdf document - " + e)
               }
             }
-            logger.info(s"orderedIdx=$orderedIdx, updatedSegDescs=${pp(updatedSegDescs)}, ordered=${pp(ordered)}, score=$score")
-            (updatedSegDescs, ordered, score)
-          }).sortBy { -_._3 }.
-            headOption.
-            getOrElse((segmentDescriptions, orderSegments(segments), 0))
-
-          logger.info(s"bestFixedSegDescrs=${pp(bestFixedSegDescrs)}")
-          log(imp, s"best segment order, score $bestScore",
-            bestOrder.zipWithIndex.map{case (s,o)=> s"$o seg$s"->segments(s).box.toRoi}: _*)
-
-          // 4. merge duplicately labeled segments into a single segment as long as
-          // that doesn't cause the merged segment to overlap another segment with a
-          // different label
-          var rtree = RTree.create[SortedSet[SegmentDescription],Rectangle]()
-          for ((s,i) <- segments.zipWithIndex) {
-            val sds = bestFixedSegDescrs.getOrElse(i, SortedSet())
-            val labels = sds.map{s=> s.label}.toSet
-
-            val sBox = s.box.toRect
-            val nearest = rtree.nearest(sBox, Double.MaxValue, Int.MaxValue).
-              filter{e=> e.value.map{_.label}.toSet === labels}.
-              toBlocking.getIterator.asScala.toSeq.headOption
-            nearest match {
-              case Some(n) =>
-                val box = ImageSegmenter.Box(
-                  math.min(sBox.x1(), n.geometry().x1()),
-                  math.min(sBox.y1(), n.geometry().y1()),
-                  math.max(sBox.x2(), n.geometry().x2()),
-                  math.max(sBox.y2(), n.geometry().y2()))
-                val merged = sds ++ n.value()
-                val mergedLabels = merged.map{_.label}.toSet
-                val overlapping = rtree.search(box.toRect).toBlocking.getIterator.asScala.
-                  filter{e=> e.value.map{_.label}.toSet !== mergedLabels}.toSeq.headOption
-                if (overlapping.isEmpty) {
-                  rtree = rtree.delete(Entries.entry(n.value(), n.geometry()), true)
-                  rtree = rtree.delete(Entries.entry(sds, s.box.toRect), true)
-                  rtree = rtree.add(Entries.entry(merged, box.toRect))
-                }
-              case None =>
-                rtree = rtree.add(Entries.entry(sds, s.box.toRect))
+            val pngs = datapackage.parent.glob("*.png")
+            val outimages = pngs.filter(f =>
+              f.name.toString.matches(raw"""^${Pattern.quote(imageFile.name.toString)}(-[0-9]+)?\.png$$"""))
+            imageFiles ++= outimages
+            if (imageFiles.isEmpty) {
+              logger.info(s"File $imageFile contains no images, skipping")
+              break
             }
           }
-          val mergedSegments = rtree.entries.toBlocking.getIterator.asScala.toSeq
-          logger.info(s"mergedSegments=${pp(mergedSegments)}")
-
-          // show
-          val captionLabels = ArrayBuffer[(String, Roi)]()
-          for (entry <- mergedSegments) {
-            val rect = entry.geometry()
-            val sds = entry.value()
-            captionLabels += sds.map{_.label}.mkString(" ")->ImageSegmenter.Box(
-              rect.x1().toInt,
-              rect.y1().toInt,
-              rect.x2().toInt,
-              rect.y2().toInt).toRoi
-            for {
-              s <- sds
-              w <- s.word
-            } {
-              captionLabels += w.getText->new Roi(
-                w.getBoundingBox.x+rect.x1.toInt,
-                w.getBoundingBox.y+rect.y1.toInt,
-                w.getBoundingBox.width,
-                w.getBoundingBox.height)
-            }
-          }
-          log(imp, "[FigTools] Show caption labels", captionLabels: _*)
-          logger.info(s"captionGroups=${pp(captionGroups)}")
-          logger.info(s"bestFixedSegDescrs=${pp(bestFixedSegDescrs)}")
-
-          logger.info(s"""Please close image window "${imp.getTitle}" to load next image...""")
-
-          // wait for user to close the image
-          while (WindowManager.getWindowCount > 0) Thread.sleep(200)
-
-          // clean up ROI list
-          RoiManager.getRoiManager.reset()
-
-          // collect garbage
-          System.gc()
         }
+        else {
+          Console.err.println(s"Could not find file $imageFile")
+        }
+
+        // TODO: handle checking multiple caption groups, not just the highest-scoring one
+        val captionGroups = CaptionSegmenter.segmentCaption(description_nohtml).take(1)
+        logger.info(s"captionGroups=${pp(captionGroups)}")
+        val hasCaptions = captionGroups.
+          flatMap { cg => cg.captions }.
+          flatMap { cs => cs.label }.
+          map {
+            _.toUpperCase
+          }.toSet
+        if (hasCaptions.size <= 1) {
+          logger.warn(s"File $imageFile only has a single caption, no need to segment the image.")
+          break
+        }
+
+        val imageFileName = imageFiles.head.toString
+        IJ.redirectErrorMessages(true)
+        logger.info(s"Opening image file $imageFileName")
+        val imp = new Opener().openImage(imageFileName)
+        if (imp === null) {
+          logger.warn(s"Could not open image file $imageFile, skipping")
+          break
+        }
+        imp.setTitle(s"$id: ${imp.getTitle}")
+        log(imp, "[AnalyzeImage] original image")
+
+
+        implicit def sdOrder: Ordering[SegmentDescription] =
+          Ordering.by(sd => (sd.segIndex, sd.labelIndex))
+
+        val segmentDescriptions = mutable.Map[Int, mutable.SortedSet[SegmentDescription]]()
+
+        val segments = ImageSegmenter.segment(imp)
+        log(imp, "[AnalyzeImage] split into segments",
+          segments.zipWithIndex.map { case (s, i) => s"seg$i" -> s.box.toRoi }: _*)
+        for ((segment, i) <- segments.zipWithIndex) {
+          val cropped = imp.duplicate()
+          cropped.setRoi(segment.box.toRoi)
+          IJ.run(cropped, "Crop", "")
+          //log(cropped, s"[FigTools] cropped segment seg$i")
+          // use tesseract OCR
+          val instance = new Tesseract()
+          val bi = cropped.getBufferedImage
+          //log(new ImagePlus(cropped.getTitle,bi), s"[FigTools] bufferedImage seg$i")
+          val words = instance.getWords(bi, TessPageIteratorLevel.RIL_WORD).asScala.
+            sortBy(x => (-(x.getBoundingBox.width * x.getBoundingBox.height), -x.getConfidence))
+          // log(new ImagePlus(cropped.getTitle, bi),
+          //   s"[AnalyzeImage] Run tesseract OCR on seg$i (segment only)",
+          //   words.map { w =>
+          //     w.getText -> new Roi(
+          //       w.getBoundingBox.x,
+          //       w.getBoundingBox.y,
+          //       w.getBoundingBox.width,
+          //       w.getBoundingBox.height)
+          //   }: _*)
+          logger.info(s"seg$i words: ${pp(words)}")
+          log(imp, s"[FigTools] Run tesseract OCR on seg$i (overview)",
+            Seq(s"seg$i" -> segment.box.toRoi) ++
+              words.map { w =>
+                w.getText -> new Roi(
+                  w.getBoundingBox.x + segment.box.x,
+                  w.getBoundingBox.y + segment.box.y,
+                  w.getBoundingBox.width,
+                  w.getBoundingBox.height)
+              }: _*)
+          for (word <- words) {
+            val box = word.getBoundingBox
+            val confidence = word.getConfidence
+            val text = word.getText
+            val captionGroups = CaptionSegmenter.segmentCaption(text)
+            logger.info(s"Tesseract OCR seg$i text: (box: ${pp((box.x, box.y, box.width, box.height))}, confidence: ${pp(confidence)}, text: ${pp(text)}, captionGroups: ${pp(captionGroups)}")
+            for {
+              captionGroup <- captionGroups
+              caption <- captionGroup.captions
+              li <- caption.label.indices
+            } {
+              val label = caption.label(li)
+              val index = caption.index(li)
+              val ucLabel = label.toUpperCase
+              if (hasCaptions.contains(ucLabel)) {
+                logger.info(s"Assigning label $label to segment seg$i}")
+                segmentDescriptions.getOrElseUpdate(i, mutable.SortedSet()) +=
+                  SegmentDescription(ucLabel, index, Some(word), i)
+              }
+            }
+          }
+        }
+        logger.info(s"segmentDescriptions=${pp(segmentDescriptions)}")
+
+        // 2. discover highest scoring layout order:
+        //     lrtb tblr rltb tbrl lrbt btlr rlbt btrl
+        // TODO: 8 zigzag patterns
+        val xmax = segments.map { _.box.x2 }.max
+        val ymax = segments.map { _.box.y2 }.max
+        val orderedCaptions = captionGroups.
+          flatMap { cg => cg.captions }.
+          flatMap { cs => cs.label }.
+          map { _.toUpperCase }.
+          zip(captionGroups.
+            flatMap { cg => cg.captions }.
+            flatMap { cs => cs.index }).
+          sortBy { case (_, i) => i }
+        val (bestFixedSegDescrs, bestOrder, bestScore) = (for {
+          (ordered, orderedIdx) <- Seq(
+            orderSegments(segments),
+            orderSegments(segments.map { s => ImageSegment(s.imp,
+              ImageSegmenter.Box(s.box.y, s.box.x, s.box.y2, s.box.x2)) }),
+            orderSegments(segments.map { s => ImageSegment(s.imp,
+              ImageSegmenter.Box(xmax - s.box.x2, s.box.y, xmax - s.box.x, s.box.y2)) }),
+            orderSegments(segments.map { s => ImageSegment(s.imp,
+              ImageSegmenter.Box(s.box.y, xmax - s.box.x2, s.box.y2, xmax - s.box.x)) }),
+            orderSegments(segments.map { s => ImageSegment(s.imp,
+              ImageSegmenter.Box(s.box.x, ymax - s.box.y2, s.box.x2, ymax - s.box.y)) }),
+            orderSegments(segments.map { s => ImageSegment(s.imp,
+              ImageSegmenter.Box(ymax - s.box.y2, s.box.x, ymax - s.box.y, s.box.x2)) }),
+            orderSegments(segments.map { s => ImageSegment(s.imp,
+              ImageSegmenter.Box(xmax - s.box.x2, ymax - s.box.y2, xmax - s.box.x, ymax - s.box.y)) }),
+            orderSegments(segments.map { s => ImageSegment(s.imp,
+              ImageSegmenter.Box(ymax - s.box.y2, xmax - s.box.x2, ymax - s.box.y, xmax - s.box.x)) }),
+          ).zipWithIndex
+        } yield {
+          val updatedSegDescs = findCaptions(orderedCaptions, ordered, segmentDescriptions)
+
+          var score = -orderedIdx
+          val captionOrder = orderedCaptions.map{_._1}.zipWithIndex.toMap
+          for ((_, sds) <- updatedSegDescs.toSeq.sortBy{_._1}) {
+            val sdsSeq = sds.toSeq
+            // reward segments with only one label to discourage undersegmentation
+            if (sdsSeq.size === 1) score += 1000
+            for ((sd, sdsIndex) <- sdsSeq.zipWithIndex) {
+              val sdo = captionOrder(sd.label)
+              if (sdsIndex < sdsSeq.size - 1) {
+                val nextSd = sdsSeq(sdsIndex + 1)
+                val next = captionOrder(nextSd.label)
+                // reward when the next segment's caption is the next in sequence
+                if (next - sdo === 1) score += 1000
+                // smaller reward when the next segment's caption is in the right direction,
+                // even if it skips
+                else if (next > sdo) score += 100
+                // penalty if the next segment's caption is in the wrong direction
+                else if (next < sdo) score -= 1000
+              }
+            }
+          }
+          logger.info(s"orderedIdx=$orderedIdx, updatedSegDescs=${pp(updatedSegDescs)}, ordered=${pp(ordered)}, score=$score")
+          (updatedSegDescs, ordered, score)
+        }).sortBy { -_._3 }.
+          headOption.
+          getOrElse((segmentDescriptions, orderSegments(segments), 0))
+
+        logger.info(s"bestFixedSegDescrs=${pp(bestFixedSegDescrs)}")
+        log(imp, s"best segment order, score $bestScore",
+          bestOrder.zipWithIndex.map{case (s,o)=> s"$o seg$s"->segments(s).box.toRoi}: _*)
+
+        // 4. merge duplicately labeled segments into a single segment as long as
+        // that doesn't cause the merged segment to overlap another segment with a
+        // different label
+        var rtree = RTree.create[SortedSet[SegmentDescription],Rectangle]()
+        for ((s,i) <- segments.zipWithIndex) {
+          val sds = bestFixedSegDescrs.getOrElse(i, SortedSet())
+          val labels = sds.map{s=> s.label}.toSet
+
+          val sBox = s.box.toRect
+          val nearest = rtree.nearest(sBox, Double.MaxValue, Int.MaxValue).
+            filter{e=> e.value.map{_.label}.toSet === labels}.
+            toBlocking.getIterator.asScala.toSeq.headOption
+          nearest match {
+            case Some(n) =>
+              val box = ImageSegmenter.Box(
+                math.min(sBox.x1(), n.geometry().x1()),
+                math.min(sBox.y1(), n.geometry().y1()),
+                math.max(sBox.x2(), n.geometry().x2()),
+                math.max(sBox.y2(), n.geometry().y2()))
+              val merged = sds ++ n.value()
+              val mergedLabels = merged.map{_.label}.toSet
+              val overlapping = rtree.search(box.toRect).toBlocking.getIterator.asScala.
+                filter{e=> e.value.map{_.label}.toSet !== mergedLabels}.toSeq.headOption
+              if (overlapping.isEmpty) {
+                rtree = rtree.delete(Entries.entry(n.value(), n.geometry()), true)
+                rtree = rtree.delete(Entries.entry(sds, s.box.toRect), true)
+                rtree = rtree.add(Entries.entry(merged, box.toRect))
+              }
+            case None =>
+              rtree = rtree.add(Entries.entry(sds, s.box.toRect))
+          }
+        }
+        val mergedSegments = rtree.entries.toBlocking.getIterator.asScala.toSeq
+        logger.info(s"mergedSegments=${pp(mergedSegments)}")
+
+        // show
+        val captionLabels = ArrayBuffer[(String, Roi)]()
+        for (entry <- mergedSegments) {
+          val rect = entry.geometry()
+          val sds = entry.value()
+          captionLabels += sds.map{_.label}.mkString(" ")->new Roi(
+            rect.x1.toInt,
+            rect.y1.toInt,
+            rect.x2.toInt,
+            rect.y2.toInt)
+          for {
+            s <- sds
+            w <- s.word
+          } {
+            captionLabels += w.getText->new Roi(
+              w.getBoundingBox.x+rect.x1.toInt,
+              w.getBoundingBox.y+rect.y1.toInt,
+              w.getBoundingBox.width,
+              w.getBoundingBox.height)
+          }
+        }
+        log(imp, "[FigTools] Show caption labels", captionLabels: _*)
+        logger.info(s"captionGroups=${pp(captionGroups)}")
+        logger.info(s"bestFixedSegDescrs=${pp(bestFixedSegDescrs)}")
+
+        logger.info(s"""Please close image window "${imp.getTitle}" to load next image...""")
+
+        // add to results map
+        val descriptions = mutable.Map[String,ArrayBuffer[String]]()
+        for {
+          cg <- captionGroups
+          cs <- cg.captions
+          l <- cs.label
+        } yield {
+          if (!descriptions.contains(l)) descriptions(l) = ArrayBuffer()
+          descriptions(l) += cs.description
+        }
+        val captions = mutable.Map[String,ArrayBuffer[Roi]]()
+        for (entry <- mergedSegments) {
+          val rect = entry.geometry()
+          val sds = entry.value()
+          for (l <- sds.map{_.label}) {
+            if (!captions.contains(l)) captions(l) = ArrayBuffer()
+            captions(l) += new Roi(rect.x1.toInt, rect.y1.toInt, rect.x2.toInt, rect.y2.toInt)
+          }
+        }
+        results(resource.name.toStr) = (descriptions.keySet ++ captions.keySet).
+          map{s=> s->(descriptions.getOrElse(s, Seq()), captions.getOrElse(s, Seq()))}.toMap
+
+        // wait for user to close the image
+        while (WindowManager.getWindowCount > 0) Thread.sleep(200)
+
+        // clean up ROI list
+        RoiManager.getRoiManager.reset()
+
+        // collect garbage
+        System.gc()
       }
     }
+    results
   }
 
   implicit def sdOrder: Ordering[SegmentDescription] =

@@ -81,7 +81,11 @@ class AnalyzeImage
     }
   }
 
-  def analyzeImages(id: String): collection.Map[String, collection.Map[String, (Seq[String], Seq[Roi])]] = {
+  case class LabelResult(descriptions: Seq[String], rois: Seq[Roi])
+  type LabelResults = collection.Map[String, LabelResult]
+  type ImageResults = collection.Map[String, LabelResults]
+
+  def analyzeImages(id: String): ImageResults = {
     val datapackage = dir/id/"datapackage.json"
     val json = Zeison.parse(datapackage.contentAsString)
     val description_nohtml = json.description_nohtml.toStr
@@ -97,7 +101,7 @@ class AnalyzeImage
     }
     logger.info("")
 
-    val results = mutable.Map[String, collection.Map[String, (Seq[String], Seq[Roi])]]()
+    val results = mutable.Map[String, LabelResults]()
     val resources = json.resources.toList
     for (resource <- resources) {
       breakable {
@@ -380,7 +384,7 @@ class AnalyzeImage
           }
         }
         results(resource.name.toStr) = (descriptions.keySet ++ captions.keySet).
-          map{s=> s->(descriptions.getOrElse(s, Seq()), captions.getOrElse(s, Seq()))}.toMap
+          map{s=> s->LabelResult(descriptions.getOrElse(s, Seq()), captions.getOrElse(s, Seq()))}.toMap
 
         // wait for user to close the image
         while (WindowManager.getWindowCount > 0) Thread.sleep(200)

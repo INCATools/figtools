@@ -64,7 +64,13 @@ class AnalyzeImage
   val imagej = new ImageJ(ImageJ.EMBEDDED)
   imagej.exitWhenQuitting(true)
 
-  def analyze() {
+  case class LabelResult(descriptions: Seq[String], rois: Seq[Roi])
+  type LabelResults = collection.Map[String, LabelResult]
+  type ImageResults = collection.Map[String, LabelResults]
+  type AnalysisResults = collection.Map[String, ImageResults]
+
+  def analyze(): AnalysisResults = {
+    val results = new util.LinkedHashMap[String, ImageResults]().asScala
     val iter = if (ids.nonEmpty)
     // download the files if the directory does not exist
       ids.iterator.map { i =>
@@ -77,13 +83,11 @@ class AnalyzeImage
       filter { i => i.name.matches("[0-9]+") && (i / "datapackage.json").exists }.
       map { _.name }
     for (id <- iter) {
-      analyzeImages(id)
+      val imageResults = analyzeImages(id)
+      results(id) = imageResults
     }
+    results
   }
-
-  case class LabelResult(descriptions: Seq[String], rois: Seq[Roi])
-  type LabelResults = collection.Map[String, LabelResult]
-  type ImageResults = collection.Map[String, LabelResults]
 
   def analyzeImages(id: String): ImageResults = {
     val datapackage = dir/id/"datapackage.json"

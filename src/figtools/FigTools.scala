@@ -4,13 +4,20 @@ import org.tsers.zeison.Zeison
 import better.files._
 import caseapp._
 import caseapp.core.help.WithHelp
+import ij.{Executer, IJ, Macro}
+import org.json4s._
+import org.json4s.native.Serialization
+import org.json4s.native.Serialization.writePretty
+import scribe.{Level, Logger}
 
 sealed abstract class Main extends Product with Serializable
 
-case class CommonOptions(
-  @HelpMessage("URL of FigShare API")
+case class CommonOptions
+( @HelpMessage("URL of FigShare API")
   @ValueDescription("URL")
-  url: String = "http://api.figshare.com/v1")
+  url: String = "http://api.figshare.com/v1",
+  @HelpMessage("Enable debug mode")
+  debug: Boolean = false)
 
 @ArgsName("List of FigShare IDs")
 final case class Get(@Recurse common: CommonOptions) extends Main
@@ -21,22 +28,23 @@ final case class List(@Recurse common: CommonOptions) extends Main
 final case class Search(@Recurse common: CommonOptions) extends Main
 
 @ArgsName("List of FigShare IDs")
-final case class Download(
-  @Recurse common: CommonOptions,
+final case class Download
+( @Recurse common: CommonOptions,
   @HelpMessage("Output directory")
   @ValueDescription("DIRECTORY")
   outDir: String = "."
 ) extends Main
 
-final case class DownloadAll(
-  @Recurse common: CommonOptions,
+final case class DownloadAll
+( @Recurse common: CommonOptions,
   @HelpMessage("Output directory")
   @ValueDescription("DIRECTORY")
   outDir: String = "."
 ) extends Main
 
 @ArgsName("List of FigShare IDs to analyze (optional)")
-final case class Analyze(
+final case class Analyze
+( @Recurse common: CommonOptions,
   @HelpMessage("Directory in which to analyze image files")
   @ValueDescription("DIR")
   dir: String = ".",
@@ -49,6 +57,7 @@ final case class Analyze(
 ) extends Main
 
 object FigTools extends CommandApp[Main] {
+  implicit val formats = Serialization.formats(NoTypeHints)
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
 
   override def appName: String = "FigTools"
@@ -94,11 +103,16 @@ object FigTools extends CommandApp[Main] {
             t.fold(error, run(_, commandArgs))
         }
     }
+    sys.exit(0)
   }
 
   def run(command: Main, args: RemainingArgs): Unit = {
     command match {
       case get: Get =>
+        if (get.common.debug || sys.env.contains("DEBUG")) {
+          scribe.Logger.root.clearHandlers().clearModifiers().
+            withHandler(minimumLevel = Some(Level.Debug)).replace()
+        }
         if (args.remaining.isEmpty) commandHelpAsked("get")
         for {
           id <- args.remaining
@@ -107,31 +121,58 @@ object FigTools extends CommandApp[Main] {
           println(Zeison.renderPretty(json))
         }
       case list: List =>
+        if (list.common.debug || sys.env.contains("DEBUG")) {
+          scribe.Logger.root.clearHandlers().clearModifiers().
+            withHandler(minimumLevel = Some(Level.Debug)).replace()
+        }
         new FigShareApi(list.common.url).list()
       case search: Search =>
+        if (search.common.debug || sys.env.contains("DEBUG")) {
+          scribe.Logger.root.clearHandlers().clearModifiers().
+            withHandler(minimumLevel = Some(Level.Debug)).replace()
+        }
         if (args.remaining.isEmpty) commandHelpAsked("search")
         for (term <- args.remaining) {
           new FigShareApi(search.common.url).search(term)
         }
       case download: Download =>
+        if (download.common.debug || sys.env.contains("DEBUG")) {
+          scribe.Logger.root.clearHandlers().clearModifiers().
+            withHandler(minimumLevel = Some(Level.Debug)).replace()
+        }
         if (args.remaining.isEmpty) commandHelpAsked("download")
         for (id <- args.remaining.toList.par) {
           new FigShareApi(download.common.url).download(id, download.outDir)
         }
       case downloadAll: DownloadAll =>
-          new FigShareApi(downloadAll.common.url).downloadAll(downloadAll.outDir)
+        if (downloadAll.common.debug || sys.env.contains("DEBUG")) {
+          scribe.Logger.root.clearHandlers().clearModifiers().
+            withHandler(minimumLevel = Some(Level.Debug)).replace()
+        }
+        new FigShareApi(downloadAll.common.url).downloadAll(downloadAll.outDir)
       case analyze: Analyze =>
+        val debug = analyze.common.debug || sys.env.contains("DEBUG")
+        if (debug) {
+          scribe.Logger.root.clearHandlers().clearModifiers().
+            withHandler(minimumLevel = Some(Level.Debug)).replace()
+        }
         edgeDetector = analyze.edgeDetector
         pdfExportResolution = analyze.pdfExportResolution
-        val debug = sys.env.contains("DEBUG")
         implicit val log = ImageLog(showLog=debug)
         val results = new AnalyzeImage(
           analyze.edgeDetector,
           analyze.pdfExportResolution,
           analyze.dir.toFile,
           args.remaining,
-          debug).analyze()
-        logger.info(s"results=${pp(results)}")
+          debug,
+          Some(analyze.common.url)).analyze()
+        val json = writePretty(results)
+        println(json)
     }
+  }
+
+  def run(command: String, options: String) {
+    val e = new Executer(command)
+    e.run()
   }
 }

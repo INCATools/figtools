@@ -31,6 +31,7 @@ import org.apache.pdfbox.tools.imageio.ImageIOUtil
 import java.io.IOException
 
 import ij.IJ
+import ij.WindowManager
 import ij.io.Opener
 import net.imagej.ImageJ
 import scribe.{Level, Logger}
@@ -40,7 +41,9 @@ class AnalyzeImage
   pdfExportResolution: Int = 300,
   dir: File = file".",
   ids: Seq[String],
-  debug: Boolean = false)(implicit log: ImageLog)
+  debug: Boolean = false,
+  url: Option[String],
+)(implicit log: ImageLog)
 {
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
   var logger = Logger(getClass.getSimpleName).
@@ -66,7 +69,7 @@ class AnalyzeImage
   val pipeline = new StanfordCoreNLP(props)
 
   // start an embedded ImageJ instance
-  val imagej = new ImageJ()
+  val imagej = if (debug) new ImageJ() else null
 
   case class LabelResult(descriptions: Seq[String], rois: Seq[Roi])
   type LabelResults = collection.Map[String, LabelResult]
@@ -79,7 +82,10 @@ class AnalyzeImage
     // download the files if the directory does not exist
       ids.iterator.map { i =>
         val d = dir / i
-        if (!d.exists) new FigShareApi().download(i, dir.toString)
+        if (!d.exists) url match {
+          case Some(u) => new FigShareApi(u).download(i, dir.toString)
+          case None => new FigShareApi().download(i, dir.toString)
+        }
         i
       }
     // find all
@@ -113,7 +119,7 @@ class AnalyzeImage
     val resources = json.resources.toList
     for (resource <- resources) {
       breakable {
-        if (debug) imagej.window.getOpenWindows.asScala.foreach{imagej.window.remove(_)}
+        if (debug) WindowManager.closeAllWindows()
 
         val name = resource.name.toStr
         val imageFile = datapackage.parent / name
@@ -369,7 +375,6 @@ class AnalyzeImage
         log(imp, "[FigTools] Show caption labels", captionLabels: _*)
         logger.debug(s"captionGroups=${pp(captionGroups)}")
         logger.debug(s"bestFixedSegDescrs=${pp(bestFixedSegDescrs)}")
-
         logger.debug(s"""Please close image window "${imp.getTitle}" to load next image...""")
 
         // add to results map
@@ -396,7 +401,7 @@ class AnalyzeImage
 
         // wait for user to close the image
         if (debug) {
-          while (imagej.window.getOpenWindows.size > 0) Thread.sleep(200)
+          while (WindowManager.getWindowCount > 0) Thread.sleep(200)
         }
 
         // clean up ROI list

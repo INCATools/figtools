@@ -57,6 +57,7 @@ lazy val figtools = (project in file(".")).
       "org.apache.pdfbox" % "pdfbox" % "2.0.11",
       "org.apache.pdfbox" % "pdfbox-tools" % "2.0.11",
       "com.lihaoyi" %% "requests" % "0.1.4",
+      "org.json4s" %% "json4s-native" % "3.2.11",
     ),
     logBuffered in Test := false,
     artifactPath in (Compile, packageBin) := {

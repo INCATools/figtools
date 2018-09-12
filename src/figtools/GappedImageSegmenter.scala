@@ -100,7 +100,7 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
 
     val mergedSegs = mergeOverlappingSegs(segs)
     segs = ArrayBuffer(mergedSegs: _*)
-    logger.info(s"mergedSegs=${pprint.apply(mergedSegs, height=1000)}")
+    logger.debug(s"mergedSegs=${pprint.apply(mergedSegs, height=1000)}")
     log(imp2, "[GappedImageSegmenter] merge overlapping segments", mergedSegs.map{_.box.toRoi}: _*)
 
     // temporarily eliminate small components
@@ -132,31 +132,31 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
       val segArea = ((seg.box.x2 - seg.box.x) * (seg.box.y2 - seg.box.y)).toDouble
       val segHisto = imp3.getProcessor.getHistogram
       val segContent = segHisto(0).toDouble / segArea
-      logger.info(s"segContent=$segContent")
+      logger.debug(s"segContent=$segContent")
 
       val up = ImageSegmenter.Box(seg.box.x,seg.box.y-seg.box.height,seg.box.x2,seg.box.y-1)
       imp3.setRoi(up.toRoi)
       val upHisto = imp3.getProcessor.getHistogram
       val upContent = upHisto(0).toDouble / segArea
-      logger.info(s"upContent=$upContent")
+      logger.debug(s"upContent=$upContent")
 
       val down = ImageSegmenter.Box(seg.box.x,seg.box.y+seg.box.height+1,seg.box.x2,seg.box.y2+seg.box.height)
       imp3.setRoi(down.toRoi)
       val downHisto = imp3.getProcessor.getHistogram
       val downContent = downHisto(0).toDouble / segArea
-      logger.info(s"downContent=$downContent")
+      logger.debug(s"downContent=$downContent")
 
       val left = ImageSegmenter.Box(seg.box.x-seg.box.width,seg.box.y,seg.box.x-1,seg.box.y2)
       imp3.setRoi(left.toRoi)
       val leftHisto = imp3.getProcessor.getHistogram
       val leftContent = leftHisto(0).toDouble / segArea
-      logger.info(s"leftContent=$leftContent")
+      logger.debug(s"leftContent=$leftContent")
 
       val right = ImageSegmenter.Box(seg.box.x+seg.box.width+1,seg.box.y,seg.box.x2+seg.box.width,seg.box.y2)
       imp3.setRoi(right.toRoi)
       val rightHisto = imp3.getProcessor.getHistogram
       val rightContent = rightHisto(0).toDouble / segArea
-      logger.info(s"rightContent=$rightContent")
+      logger.debug(s"rightContent=$rightContent")
 
       (if (math.abs(segContent-upContent) < ContentDiff &&
         upContent > ContentMin &&
@@ -207,9 +207,9 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
       map{case (s,i)=>GappedImageSegmenter.Segment(s, i)} ++
       (smaller ++ smallSegs).zipWithIndex.
         map{case (s,i)=>GappedImageSegmenter.Segment(s, -(i+1))}
-    logger.info(s"Running recover small components step")
+    logger.debug(s"Running recover small components step")
     val recovered = recoverSmallComponents(imp2, toRecover)
-    logger.info(s"Finished running recover small components step")
+    logger.debug(s"Finished running recover small components step")
 
     log(imp2, "[GappedImageSegmenter] recover small components",
       recovered.map{s=>s.segment.box.toRoi}: _*)
@@ -282,7 +282,7 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
 
   def recoverSmallComponents(imp: ImagePlus, segs: Seq[Segment]): Seq[Segment] = {
     // build the r-tree by merging all the overlapping components
-    logger.info(s"building merged r-tree using ${segs.size} segs")
+    logger.debug(s"building merged r-tree using ${segs.size} segs")
     var rtree = RTree.create[Segment,Rectangle]()
     for (seg <- segs) {
       val overlaps = rtree.search(seg.segment.box.toRect).
@@ -319,7 +319,7 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
       // add the merged segment
       rtree = rtree.add(Entries.entry(merged, merged.segment.box.toRect))
     }
-    logger.info(s"built merged r-tree with ${rtree.size} elements")
+    logger.debug(s"built merged r-tree with ${rtree.size} elements")
 
     // set of each segment paired with its nearest neighbor, sorted by minimum distance
     val segpairs = mutable.SortedSet[SegPair](
@@ -350,7 +350,7 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
     while (segpairs.nonEmpty) {
       // pop the first pair from the set
       val pair = segpairs.head
-      logger.info(s"pair=${pp(pair)}")
+      logger.debug(s"pair=${pp(pair)}")
       val segpairsSize = segpairs.size
       segpairs -= pair
       assert(segpairsSize-1 === segpairs.size)
@@ -358,14 +358,14 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
       // negative numbers are mergeable
       val pairsegs = Seq(pair.segment, pair.nearest)
       val group = pairsegs.map{_.group}.max
-      logger.info(s"group=$group")
+      logger.debug(s"group=$group")
       // figure out what needs to be re-grouped
       val toGroup = (pairsegs ++
         pairsegs.filter{s=>s.group !== group}.flatMap{s=>groups(s.group)}).toSet
-      logger.info(s"toGroup=${pp(toGroup)}")
+      logger.debug(s"toGroup=${pp(toGroup)}")
       // create the grouped segments
       val grouped = toGroup.map{s=>Segment(s.segment, group)}
-      logger.info(s"grouped=${pp(grouped)}")
+      logger.debug(s"grouped=${pp(grouped)}")
 
       // delete the old segments from rtree, segpairs, segindex, and groups
       val rtreeSize = rtree.size
@@ -447,7 +447,7 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
       //log.step(imp, s"[GappedImageSegmenter] recover small components step, rois.size=${rois.size}", rois: _*)
     }
     // return the remaining r-tree entries
-    logger.info(s"return merged group entries")
+    logger.debug(s"return merged group entries")
     val mergedSegments = groups.map{case (i,g)=>
       g.reduce((a,b) =>
         Segment(

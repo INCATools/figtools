@@ -89,8 +89,8 @@ case class ImageLog(showLog: Boolean = true) {
     }
   }
 
-  def pressAnyKey(): Unit = {
-    System.out.println("Press any key to continue...")
+  def pressAnyKey(message: String = "Press any key to continue..."): Unit = {
+    Console.err.println(message)
     for (terminal <- TerminalBuilder.builder().jna(true).system(true).build.autoClosed) {
       terminal.enterRawMode
       for (reader <- terminal.reader.autoClosed) {

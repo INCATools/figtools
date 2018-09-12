@@ -101,13 +101,13 @@ object FigTools extends CommandApp[Main] {
           case Right((c, WithHelp(commandUsage, commandHelp, t), commandArgs)) =>
             if (commandHelp) commandHelpAsked(c)
             if (commandUsage) commandUsageAsked(c)
-            t.fold(error, runCommand(_, commandArgs))
+            t.fold(error, run(_, commandArgs))
         }
     }
     sys.exit(0)
   }
 
-  def runCommand(command: Main, args: RemainingArgs): Unit = {
+  def run(command: Main, args: RemainingArgs): Unit = {
     command match {
       case get: Get =>
         if (get.common.debug || sys.env.contains("DEBUG")) {
@@ -179,7 +179,7 @@ object FigTools extends CommandApp[Main] {
       method.setAccessible(true)
       method.invoke(ij1, new Callable[Unit] {
         override def call() = {
-          block()
+          block
         }
       })
     }

@@ -30,7 +30,7 @@ import org.apache.pdfbox.rendering.{ImageType, PDFRenderer}
 import org.apache.pdfbox.tools.imageio.ImageIOUtil
 import java.io.IOException
 
-import ij.IJ
+import figtools.FigTools.IJ
 import ij.WindowManager
 import ij.io.Opener
 import net.imagej.ImageJ
@@ -178,7 +178,6 @@ class AnalyzeImage
         }
 
         val imageFileName = imageFiles.head.toString
-        IJ.redirectErrorMessages(true)
         logger.debug(s"Opening image file $imageFileName")
         val imp = new Opener().openImage(imageFileName)
         if (imp === null) {

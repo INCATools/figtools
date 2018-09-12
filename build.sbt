@@ -35,6 +35,7 @@ lazy val figtools = (project in file(".")).
     libraryDependencies ++= Seq(
       "com.github.alexarchambault" %% "case-app" % "2.0.0-M3",
       "net.imagej" % "imagej" % "2.0.0-rc-68",
+      "net.imagej" % "imagej-legacy" % "0.33.1",
       "net.sourceforge.tess4j" % "tess4j" % "3.4.0",
       "edu.stanford.nlp" % "stanford-corenlp" % "3.8.0",
       "edu.stanford.nlp" % "stanford-corenlp" % "3.8.0" classifier "models-english",

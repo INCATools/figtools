@@ -4,11 +4,12 @@ import scribe.Logger
 import ij.gui.Roi
 import ij.plugin.frame.RoiManager
 import ij.process.Blitter
-import ij.{IJ, ImagePlus, WindowManager}
+import ij.{ImagePlus, WindowManager}
 import javax.swing.SwingUtilities
 import org.jline.terminal.TerminalBuilder
 import better.files._
 import de.sciss.equal.Implicits._
+import figtools.FigTools.IJ
 
 case class ImageLog(showLog: Boolean = true) {
   // union type magic

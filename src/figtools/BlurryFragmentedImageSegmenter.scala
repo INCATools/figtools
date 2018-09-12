@@ -1,11 +1,12 @@
 package figtools
 
 import figtools.ImageSegmenter.ImageSegment
-import ij.{IJ, ImagePlus}
+import ij.ImagePlus
 import scribe.Logger
 
 import scala.util.control.Breaks._
 import de.sciss.equal.Implicits._
+import figtools.FigTools.IJ
 
 class BlurryFragmentedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
   val logger = Logger(getClass.getSimpleName)

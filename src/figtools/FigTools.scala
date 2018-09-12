@@ -1,10 +1,12 @@
 package figtools
-import scribe.Logger
+import java.util.concurrent.Callable
+
 import org.tsers.zeison.Zeison
 import better.files._
 import caseapp._
 import caseapp.core.help.WithHelp
-import ij.{Executer, IJ, Macro}
+import ij.{IJ, ImagePlus}
+import net.imagej.legacy.LegacyService
 import org.json4s._
 import org.json4s.native.Serialization
 import org.json4s.native.Serialization.writePretty
@@ -87,8 +89,7 @@ object FigTools extends CommandApp[Main] {
     }
     exit(0)
   }
-  override def main(args: Array[String]): Unit = {
-    commandParser.withHelp.detailedParse(args)(beforeCommandParser.withHelp) match {
+  override def main(args: Array[String]): Unit = { commandParser.withHelp.detailedParse(args)(beforeCommandParser.withHelp) match {
       case Left(err) => error(err)
       case Right((WithHelp(usage, help, d), dArgs, optCmd)) =>
         if (help || optCmd.isEmpty) helpAsked()
@@ -100,13 +101,13 @@ object FigTools extends CommandApp[Main] {
           case Right((c, WithHelp(commandUsage, commandHelp, t), commandArgs)) =>
             if (commandHelp) commandHelpAsked(c)
             if (commandUsage) commandUsageAsked(c)
-            t.fold(error, run(_, commandArgs))
+            t.fold(error, runCommand(_, commandArgs))
         }
     }
     sys.exit(0)
   }
 
-  def run(command: Main, args: RemainingArgs): Unit = {
+  def runCommand(command: Main, args: RemainingArgs): Unit = {
     command match {
       case get: Get =>
         if (get.common.debug || sys.env.contains("DEBUG")) {
@@ -171,8 +172,21 @@ object FigTools extends CommandApp[Main] {
     }
   }
 
-  def run(command: String, options: String) {
-    val e = new Executer(command)
-    e.run()
+  object IJ {
+    def run(block: =>Any): Unit = {
+      val ij1 = LegacyService.getInstance.getIJ1Helper
+      val method = ij1.getClass.getDeclaredMethod("runMacroFriendly", classOf[Callable[_]])
+      method.setAccessible(true)
+      method.invoke(ij1, new Callable[Unit] {
+        override def call() = {
+          block()
+        }
+      })
+    }
+    def run(imp: ImagePlus, command: String, options: String): Unit = {
+      run {
+        IJ.run(imp, command, options)
+      }
+    }
   }
 }

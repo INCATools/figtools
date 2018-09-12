@@ -1,7 +1,8 @@
 package figtools
 
+import figtools.FigTools.IJ
 import ij.process.FloatProcessor
-import ij.{IJ, ImagePlus}
+import ij.ImagePlus
 import org.openimaj.image.FImage
 import org.openimaj.image.processing.edges.SUSANEdgeDetector
 import scribe.Logger

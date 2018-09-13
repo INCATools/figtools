@@ -1,5 +1,6 @@
 package figtools
 
+import java.awt.GraphicsEnvironment
 import java.util.Properties
 import java.util.regex.Pattern
 
@@ -33,7 +34,6 @@ import java.io.IOException
 import figtools.FigTools.IJ
 import ij.WindowManager
 import ij.io.Opener
-import net.imagej.ImageJ
 import scribe.{Level, Logger}
 
 class AnalyzeImage
@@ -67,9 +67,6 @@ class AnalyzeImage
   val props = new Properties()
   props.setProperty("annotators", "tokenize, ssplit, pos, lemma, ner, parse, dcoref")
   val pipeline = new StanfordCoreNLP(props)
-
-  // start an embedded ImageJ instance
-  val imagej = if (debug) new ImageJ() else null
 
   case class LabelResult(descriptions: Seq[String], rois: Seq[Roi])
   type LabelResults = collection.Map[String, LabelResult]
@@ -119,7 +116,7 @@ class AnalyzeImage
     val resources = json.resources.toList
     for (resource <- resources) {
       breakable {
-        if (debug) WindowManager.closeAllWindows()
+        if (!GraphicsEnvironment.isHeadless) WindowManager.closeAllWindows()
 
         val name = resource.name.toStr
         val imageFile = datapackage.parent / name
@@ -399,12 +396,12 @@ class AnalyzeImage
           map{s=> s->LabelResult(descriptions.getOrElse(s, Seq()), captions.getOrElse(s, Seq()))}.toMap
 
         // wait for user to close the image
-        if (debug) {
+        if (!GraphicsEnvironment.isHeadless) {
           while (WindowManager.getWindowCount > 0) Thread.sleep(200)
-        }
 
-        // clean up ROI list
-        RoiManager.getRoiManager.reset()
+          // clean up ROI list
+          RoiManager.getRoiManager.reset()
+        }
 
         // collect garbage
         System.gc()

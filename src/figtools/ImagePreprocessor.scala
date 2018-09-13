@@ -15,7 +15,8 @@ class ImagePreprocessor()(implicit log: ImageLog) {
     new ImageConverter(imp).convertToGray8()
     log(imp, "[ImagePreprocessor] convert to gray 8-bit")
     // resize to 2x
-    val resized = new ImagePlus(imp.getTitle)
+    val resized = new ImagePlus()
+    resized.setTitle(imp.getTitle())
     imp.getProcessor().setInterpolationMethod(ImageProcessor.BICUBIC)
     resized.setProcessor(imp.getProcessor.resize(imp.getWidth * 2, imp.getHeight * 2))
     log(resized, "[ImagePreprocessor] resize to 2x")

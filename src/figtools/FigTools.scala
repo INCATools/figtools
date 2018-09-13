@@ -1,5 +1,4 @@
 package figtools
-import java.awt.EventQueue
 import java.util.concurrent.Callable
 
 import org.tsers.zeison.Zeison
@@ -13,6 +12,7 @@ import org.json4s._
 import org.json4s.native.Serialization
 import org.json4s.native.Serialization.writePretty
 import scribe.{Level, Logger}
+import net.imagej.ImageJ
 
 sealed abstract class Main extends Product with Serializable
 
@@ -62,6 +62,8 @@ final case class Analyze
 
 object FigTools extends CommandApp[Main] {
   LegacyInjector.preinit()
+  val imagej = new ImageJ()
+  imagej.context.service(classOf[LegacyService])
 
   implicit val formats = Serialization.formats(NoTypeHints)
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)

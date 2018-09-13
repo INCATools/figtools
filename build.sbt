@@ -35,7 +35,8 @@ lazy val figtools = (project in file(".")).
     libraryDependencies ++= Seq(
       "com.github.alexarchambault" %% "case-app" % "2.0.0-M3",
       "net.imagej" % "imagej" % "2.0.0-rc-68",
-      "net.imagej" % "imagej-legacy" % "0.33.1",
+      "net.imagej" % "imagej-legacy" % "0.33.2-SNAPSHOT",
+      "org.javassist" % "javassist" % "3.23.1-GA",
       "net.sourceforge.tess4j" % "tess4j" % "3.4.0",
       "edu.stanford.nlp" % "stanford-corenlp" % "3.8.0",
       "edu.stanford.nlp" % "stanford-corenlp" % "3.8.0" classifier "models-english",
@@ -68,17 +69,27 @@ lazy val figtools = (project in file(".")).
       val ivyReportFile = (ivyReport in Compile).value
       val xml = XML.loadFile(ivyReportFile)
       val (deps, depsScript) = (for {
-        artifact <- xml \\ "ivy-report" \\ "dependencies" \ "module" \ "revision" \ "artifacts" \ "artifact"
-        location = (artifact \ "@location").text.
-          replaceFirst(s"""^${Pattern.quote(System.getProperty("user.home"))}""","\\$HOME")
+        artifact <- (xml\\"ivy-report"\\"dependencies"\"module"\"revision"\"artifacts"\"artifact").filter{a=> !(a\"@location").text.matches(".*/javassist-3[.]12[.]1[.]GA[.]jar")}
+        location = (artifact\"@location").text.
+          replaceFirst(
+            s"""^${Pattern.quote(System.getProperty("user.home"))}""",
+            "\\$HOME")
         originLocation = (artifact \ "origin-location" \ "@location").text
       } yield {(location,s"""test ! -e "$location" && mkdir -p "${new File(location).getParent}" && (set -x; curl -Sso "$location" '$originLocation')""")}).unzip
+      val ij1Patcher = (xml\\"ivy-report"\\"dependencies"\"module"\"revision"\"artifacts"\"artifact").
+        filter{a=>(a\"@location").text.matches(".*/ij1-patcher-.*[.]jar")}.
+        map{a=>(a\"@location").text.
+          replaceFirst(
+            s"""^${Pattern.quote(System.getProperty("user.home"))}""",
+            "\\$HOME")}.
+        headOption.getOrElse("")
       val prependShellScript =
         s"""#!/usr/bin/env bash
 ${"""PCTMEMORY=${PCTMEMORY-75}
 MEMORY=${MEMORY-$(m=$(sysctl -n hw.memsize 2>/dev/null || free -b|perl -0777 -ne 'print [/^Mem:\s+([0-9]+)/ms]->[0]' 2>/dev/null ||true); [[ -n $m ]] && echo $(( m * $PCTMEMORY / 100 / 1048576 ))m)}"""}
 ${depsScript.mkString("\n")}
-TF_CPP_MIN_LOG_LEVEL=3 exec java $${DEBUG+-agentlib:jdwp=transport=dt_socket,server=y,address=$DebugPort,suspend=n} -noverify -XX:+UseG1GC "-Xmx$$MEMORY" $$JAVA_OPTS $${DEBUG- -Djava.awt.headless=true -Dapple.awt.UIElement=true} -cp "$$0:${deps.mkString(":")}" "${(mainClass in Compile).value.get}" "$$@"
+export -n DEBUG SHOW
+TF_CPP_MIN_LOG_LEVEL=3 exec java $${DEBUG+ -agentlib:jdwp=transport=dt_socket,server=y,address=$DebugPort,suspend=n} -noverify -XX:+UseG1GC "-Xmx$$MEMORY" $$JAVA_OPTS $${SHOW- -Djava.awt.headless=true -Dapple.awt.UIElement=true} ${if (ij1Patcher.nonEmpty) s""""-javaagent:$ij1Patcher"""" else ""} -cp "$$0:${deps.mkString(":")}" "${(mainClass in Compile).value.get}" "$$@"
 """
       val prependScript = (baseDirectory.value / "target" / s"${(mainClass in Compile).value.get}.prependShellScript.sh").toString
       Files.write(Paths.get(prependScript), prependShellScript.getBytes(StandardCharsets.UTF_8))

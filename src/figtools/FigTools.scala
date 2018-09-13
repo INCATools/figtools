@@ -1,12 +1,14 @@
 package figtools
+import java.awt.EventQueue
 import java.util.concurrent.Callable
 
 import org.tsers.zeison.Zeison
 import better.files._
 import caseapp._
 import caseapp.core.help.WithHelp
-import ij.{IJ, ImagePlus}
+import ij.ImagePlus
 import net.imagej.legacy.LegacyService
+import net.imagej.patcher.LegacyInjector
 import org.json4s._
 import org.json4s.native.Serialization
 import org.json4s.native.Serialization.writePretty
@@ -59,6 +61,8 @@ final case class Analyze
 ) extends Main
 
 object FigTools extends CommandApp[Main] {
+  LegacyInjector.preinit()
+
   implicit val formats = Serialization.formats(NoTypeHints)
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
 
@@ -110,7 +114,7 @@ object FigTools extends CommandApp[Main] {
   def run(command: Main, args: RemainingArgs): Unit = {
     command match {
       case get: Get =>
-        if (get.common.debug || sys.env.contains("DEBUG")) {
+        if (get.common.debug) {
           scribe.Logger.root.clearHandlers().clearModifiers().
             withHandler(minimumLevel = Some(Level.Debug)).replace()
         }
@@ -122,13 +126,13 @@ object FigTools extends CommandApp[Main] {
           println(Zeison.renderPretty(json))
         }
       case list: List =>
-        if (list.common.debug || sys.env.contains("DEBUG")) {
+        if (list.common.debug) {
           scribe.Logger.root.clearHandlers().clearModifiers().
             withHandler(minimumLevel = Some(Level.Debug)).replace()
         }
         new FigShareApi(list.common.url).list()
       case search: Search =>
-        if (search.common.debug || sys.env.contains("DEBUG")) {
+        if (search.common.debug) {
           scribe.Logger.root.clearHandlers().clearModifiers().
             withHandler(minimumLevel = Some(Level.Debug)).replace()
         }
@@ -137,7 +141,7 @@ object FigTools extends CommandApp[Main] {
           new FigShareApi(search.common.url).search(term)
         }
       case download: Download =>
-        if (download.common.debug || sys.env.contains("DEBUG")) {
+        if (download.common.debug) {
           scribe.Logger.root.clearHandlers().clearModifiers().
             withHandler(minimumLevel = Some(Level.Debug)).replace()
         }
@@ -146,13 +150,13 @@ object FigTools extends CommandApp[Main] {
           new FigShareApi(download.common.url).download(id, download.outDir)
         }
       case downloadAll: DownloadAll =>
-        if (downloadAll.common.debug || sys.env.contains("DEBUG")) {
+        if (downloadAll.common.debug) {
           scribe.Logger.root.clearHandlers().clearModifiers().
             withHandler(minimumLevel = Some(Level.Debug)).replace()
         }
         new FigShareApi(downloadAll.common.url).downloadAll(downloadAll.outDir)
       case analyze: Analyze =>
-        val debug = analyze.common.debug || sys.env.contains("DEBUG")
+        val debug = analyze.common.debug
         if (debug) {
           scribe.Logger.root.clearHandlers().clearModifiers().
             withHandler(minimumLevel = Some(Level.Debug)).replace()
@@ -177,15 +181,21 @@ object FigTools extends CommandApp[Main] {
       val ij1 = LegacyService.getInstance.getIJ1Helper
       val method = ij1.getClass.getDeclaredMethod("runMacroFriendly", classOf[Callable[_]])
       method.setAccessible(true)
-      method.invoke(ij1, new Callable[Unit] {
-        override def call() = {
-          block
+      val thread = new Thread("IJ macro") {
+        override def run() = {
+          method.invoke(ij1, new Callable[Unit] {
+            override def call(): Unit = {
+              block
+            }
+          })
         }
-      })
+      }
+      thread.start()
+      thread.join()
     }
     def run(imp: ImagePlus, command: String, options: String): Unit = {
       run {
-        IJ.run(imp, command, options)
+        ij.IJ.run(imp, command, options)
       }
     }
   }

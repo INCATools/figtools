@@ -23,6 +23,15 @@ lazy val figtools = (project in file(".")).
     scalaSource in Test := baseDirectory.value / "test/src",
     javaSource in Compile := baseDirectory.value / "src",
     javaSource in Test := baseDirectory.value / "test/src",
+    javaOptions in Test += "-Djava.awt.headless=true",
+    javaOptions in Test += "-Dapple.awt.UIElement=true",
+    Test / fork := true,
+    Test / envVars := Map("TESSDATA_PREFIX" -> Seq(
+      "/usr/local/opt/tesseract/share",
+      "/opt/tesseract/share",
+      "/usr/share",
+      "/usr/local/share").
+      find{d=>new java.io.File(s"$d/tessdata").isDirectory}.getOrElse("")),
     resourceDirectory in Compile := baseDirectory.value / "resources",
     resourceDirectory in Test := baseDirectory.value / "test/resources",
     mainClass in Compile := Some("figtools.FigTools"),
@@ -85,7 +94,9 @@ lazy val figtools = (project in file(".")).
         headOption.getOrElse("")
       val prependShellScript =
         s"""#!/usr/bin/env bash
-${"""PCTMEMORY=${PCTMEMORY-75}
+${"""
+TESSDATA_PREFIX=${TESSDATA_PREFIX-$(for d in /usr/local/opt/tesseract/share /usr/share /usr/local/share /opt/tesseract/share; test -d "$d/tessdata" && echo "$d" && break; done)}
+PCTMEMORY=${PCTMEMORY-75}
 MEMORY=${MEMORY-$(m=$(sysctl -n hw.memsize 2>/dev/null || free -b|perl -0777 -ne 'print [/^Mem:\s+([0-9]+)/ms]->[0]' 2>/dev/null ||true); [[ -n $m ]] && echo $(( m * $PCTMEMORY / 100 / 1048576 ))m)}"""}
 ${depsScript.mkString("\n")}
 export -n DEBUG SHOW AGENT

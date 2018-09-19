@@ -69,7 +69,7 @@ class ImagePreprocessor()(implicit log: ImageLog) {
     cropped
   }
 
-  def findImageBorders(imp: ImagePlus, gapColor: Int): ImageSegmenter.Box[Int] = {
+  def findImageBorders(imp: ImagePlus, gapColor: Int): Box = {
     var x1 = 0
     var x2 = imp.getWidth - 1
     var y1 = 0
@@ -149,14 +149,14 @@ class ImagePreprocessor()(implicit log: ImageLog) {
     val MinWidth =  (imp.getWidth * MinSizeRatio).toInt
     val MinHeight =  (imp.getHeight * MinSizeRatio).toInt
     if ((cropX1 < 0 || cropY1 < 0 || cropX2 < 0 || cropY2 < 0) || !(cropX1 + MinWidth < cropX2 && cropY1 + MinHeight < cropY2)) {
-      ImageSegmenter.Box(x1, x2, y1, y2)
+      Box(x1, x2, y1, y2)
     }
-    else ImageSegmenter.Box(cropX1, cropY1, cropX2 - cropX1 + 1, cropY2 - cropY1 + 1)
+    else Box(cropX1, cropY1, cropX2 - cropX1 + 1, cropY2 - cropY1 + 1)
   }
 
   def cropImageBorders(imp: ImagePlus, gapColor: Int): Option[ImagePlus] = {
     val roi = findImageBorders(imp, gapColor)
-    if (roi === ImageSegmenter.Box(0, 0, imp.getWidth-1, imp.getHeight-1)) {
+    if (roi === Box(0, 0, imp.getWidth-1, imp.getHeight-1)) {
       None
     }
     else {

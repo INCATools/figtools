@@ -13,7 +13,7 @@ class StitchedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
     val edgeImage = edgeDetector.run(imp)
 
     val segments = segment0(ImageSegment(edgeImage,
-      ImageSegmenter.Box(0, 0, imp.getWidth-1, imp.getHeight-1)))
+      Box(0, 0, imp.getWidth-1, imp.getHeight-1)))
     log(imp, "[StitchedImageSegmenter] split into segments",
       segments.zipWithIndex.map{case (s,i)=>s"seg${i+1}"->s.box.toRoi}: _*)
     val MinLengthRatio = 0.2
@@ -69,12 +69,12 @@ class StitchedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
     }
     // return horizontally split segments
     else if (bestHoriz > bestVert) {
-      segment0(ImageSegment(imp, ImageSegmenter.Box(
+      segment0(ImageSegment(imp, Box(
         segment.box.x,
         segment.box.y,
         math.max(0,bestHorizX-1),
         segment.box.y2))) ++
-      segment0(ImageSegment(imp, ImageSegmenter.Box(
+      segment0(ImageSegment(imp, Box(
         math.min(segment.box.x2,bestHorizX+1),
         segment.box.y,
         segment.box.x2,
@@ -82,12 +82,12 @@ class StitchedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
     }
     // return vertically split segments
     else {
-      segment0(ImageSegment(imp, ImageSegmenter.Box(
+      segment0(ImageSegment(imp, Box(
         segment.box.x,
         segment.box.y,
         segment.box.x2,
         math.max(0,bestVertY-1)))) ++
-      segment0(ImageSegment(imp, ImageSegmenter.Box(
+      segment0(ImageSegment(imp, Box(
         segment.box.x,
         math.min(segment.box.y2,bestVertY+1),
         segment.box.x2,

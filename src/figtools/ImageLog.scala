@@ -1,5 +1,7 @@
 package figtools
 
+import java.awt.GraphicsEnvironment
+
 import scribe.Logger
 import ij.gui.Roi
 import ij.plugin.frame.RoiManager
@@ -11,7 +13,7 @@ import better.files._
 import de.sciss.equal.Implicits._
 import figtools.FigTools.IJ
 
-case class ImageLog(showLog: Boolean = true) {
+case class ImageLog() {
   // union type magic
   type ¬[A] = A => Nothing
   type ∨[T, U] = ¬[¬[T] with ¬[U]]
@@ -25,7 +27,7 @@ case class ImageLog(showLog: Boolean = true) {
   def step[R : (Roi |∨| (String,Roi))#λ](imp_ : ImagePlus, description: String, rois: R*): Unit = log(imp_, description, step=true, rois: _*)
 
   def log[R : (Roi |∨| (String,Roi))#λ](imp_ : ImagePlus, description: String, step: Boolean, rois: R*): Unit = {
-    if (showLog) {
+    if (!GraphicsEnvironment.isHeadless) {
       logger.info(s"${imp_.getTitle}: $description: Rois.size: ${rois.size}")
       SwingUtilities.invokeAndWait(()=>{
         val imp = imp_.duplicate()

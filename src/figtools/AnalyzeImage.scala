@@ -43,8 +43,11 @@ class AnalyzeImage
   ids: Seq[String],
   debug: Boolean = false,
   url: Option[String],
-)(implicit log: ImageLog)
+  datapath: File = File(sys.env.getOrElse("TESSDATA_PREFIX",".")))
 {
+  import AnalyzeImage._
+
+  implicit val log = ImageLog()
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
   var logger = Logger(getClass.getSimpleName).
     withHandler(minimumLevel=Some(if (debug) Level.Debug else Level.Info))
@@ -67,11 +70,6 @@ class AnalyzeImage
   val props = new Properties()
   props.setProperty("annotators", "tokenize, ssplit, pos, lemma, ner, parse, dcoref")
   val pipeline = new StanfordCoreNLP(props)
-
-  case class LabelResult(descriptions: Seq[String], rois: Seq[Roi])
-  type LabelResults = collection.Map[String, LabelResult]
-  type ImageResults = collection.Map[String, LabelResults]
-  type AnalysisResults = collection.Map[String, ImageResults]
 
   def analyze(): AnalysisResults = {
     val results = new util.LinkedHashMap[String, ImageResults]().asScala
@@ -200,6 +198,7 @@ class AnalyzeImage
           //log(cropped, s"[FigTools] cropped segment seg$i")
           // use tesseract OCR
           val instance = new Tesseract()
+          instance.setDatapath(datapath.toString)
           val bi = cropped.getBufferedImage
           //log(new ImagePlus(cropped.getTitle,bi), s"[FigTools] bufferedImage seg$i")
           val words = instance.getWords(bi, TessPageIteratorLevel.RIL_WORD).asScala.
@@ -264,19 +263,19 @@ class AnalyzeImage
           (ordered, orderedIdx) <- Seq(
             orderSegments(segments),
             orderSegments(segments.map { s => ImageSegment(s.imp,
-              ImageSegmenter.Box(s.box.y, s.box.x, s.box.y2, s.box.x2)) }),
+              Box(s.box.y, s.box.x, s.box.y2, s.box.x2)) }),
             orderSegments(segments.map { s => ImageSegment(s.imp,
-              ImageSegmenter.Box(xmax - s.box.x2, s.box.y, xmax - s.box.x, s.box.y2)) }),
+              Box(xmax - s.box.x2, s.box.y, xmax - s.box.x, s.box.y2)) }),
             orderSegments(segments.map { s => ImageSegment(s.imp,
-              ImageSegmenter.Box(s.box.y, xmax - s.box.x2, s.box.y2, xmax - s.box.x)) }),
+              Box(s.box.y, xmax - s.box.x2, s.box.y2, xmax - s.box.x)) }),
             orderSegments(segments.map { s => ImageSegment(s.imp,
-              ImageSegmenter.Box(s.box.x, ymax - s.box.y2, s.box.x2, ymax - s.box.y)) }),
+              Box(s.box.x, ymax - s.box.y2, s.box.x2, ymax - s.box.y)) }),
             orderSegments(segments.map { s => ImageSegment(s.imp,
-              ImageSegmenter.Box(ymax - s.box.y2, s.box.x, ymax - s.box.y, s.box.x2)) }),
+              Box(ymax - s.box.y2, s.box.x, ymax - s.box.y, s.box.x2)) }),
             orderSegments(segments.map { s => ImageSegment(s.imp,
-              ImageSegmenter.Box(xmax - s.box.x2, ymax - s.box.y2, xmax - s.box.x, ymax - s.box.y)) }),
+              Box(xmax - s.box.x2, ymax - s.box.y2, xmax - s.box.x, ymax - s.box.y)) }),
             orderSegments(segments.map { s => ImageSegment(s.imp,
-              ImageSegmenter.Box(ymax - s.box.y2, xmax - s.box.x2, ymax - s.box.y, xmax - s.box.x)) }),
+              Box(ymax - s.box.y2, xmax - s.box.x2, ymax - s.box.y, xmax - s.box.x)) }),
           ).zipWithIndex
         } yield {
           val updatedSegDescs = findCaptions(orderedCaptions, ordered, segmentDescriptions)
@@ -326,11 +325,11 @@ class AnalyzeImage
             toBlocking.getIterator.asScala.toSeq.headOption
           nearest match {
             case Some(n) =>
-              val box = ImageSegmenter.Box(
-                math.min(sBox.x1(), n.geometry().x1()),
-                math.min(sBox.y1(), n.geometry().y1()),
-                math.max(sBox.x2(), n.geometry().x2()),
-                math.max(sBox.y2(), n.geometry().y2()))
+              val box = Box(
+                math.min(sBox.x1().toInt, n.geometry().x1().toInt),
+                math.min(sBox.y1().toInt, n.geometry().y1().toInt),
+                math.max(sBox.x2().toInt, n.geometry().x2().toInt),
+                math.max(sBox.y2().toInt, n.geometry().y2().toInt))
               val merged = sds ++ n.value()
               val mergedLabels = merged.map{_.label}.toSet
               val overlapping = rtree.search(box.toRect).toBlocking.getIterator.asScala.
@@ -383,13 +382,13 @@ class AnalyzeImage
           if (!descriptions.contains(l)) descriptions(l) = ArrayBuffer()
           descriptions(l) += cs.description
         }
-        val captions = mutable.Map[String,ArrayBuffer[Roi]]()
+        val captions = mutable.Map[String,ArrayBuffer[Box]]()
         for (entry <- mergedSegments) {
           val rect = entry.geometry()
           val sds = entry.value()
           for (l <- sds.map{_.label}) {
             if (!captions.contains(l)) captions(l) = ArrayBuffer()
-            captions(l) += new Roi(rect.x1.toInt, rect.y1.toInt, rect.x2.toInt, rect.y2.toInt)
+            captions(l) += Box(rect.x1.toInt, rect.y1.toInt, rect.x2.toInt, rect.y2.toInt)
           }
         }
         results(resource.name.toStr) = (descriptions.keySet ++ captions.keySet).
@@ -578,4 +577,11 @@ class AnalyzeImage
     }
     ordered.toSeq
   }
+}
+
+object AnalyzeImage {
+  case class LabelResult(descriptions: Seq[String], rois: Seq[Box])
+  type LabelResults = collection.Map[String, LabelResult]
+  type ImageResults = collection.Map[String, LabelResults]
+  type AnalysisResults = collection.Map[String, ImageResults]
 }

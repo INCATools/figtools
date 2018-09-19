@@ -11,15 +11,7 @@ trait ImageSegmenter {
 }
 
 object ImageSegmenter {
-  case class Box[T](x: T, y: T, x2: T, y2: T)(implicit num: Numeric[T]) {
-    import num._
-    require(x <= x2 && y <= y2, s"Invalid box: $this")
-    def width: T = x2 - x + 1.asInstanceOf[T]
-    def height: T = y2 - y + 1.asInstanceOf[T]
-    def toRect: Rectangle = Geometries.rectangle(x.toFloat, y.toFloat, x2.toFloat, y2.toFloat)
-    def toRoi: Roi = new Roi(x.toDouble, y.toDouble, width.toDouble, height.toDouble)
-  }
-  case class ImageSegment(imp: ImagePlus, box: Box[Int]) {
+  case class ImageSegment(imp: ImagePlus, box: Box) {
     override def equals( arg:Any): Boolean = arg match {
       case s: ImageSegment => s.box === box
       case _ => false

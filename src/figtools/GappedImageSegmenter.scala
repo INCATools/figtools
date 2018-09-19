@@ -83,13 +83,13 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
           height > imp2.getHeight.toDouble / ParticleThreshold)
       {
         if ((width*height).toDouble / (imp2.getWidth*imp2.getHeight).toDouble < largeParticleFilter) {
-          val box = ImageSegmenter.Box(bx, by, bx+width, by+height)
+          val box = Box(bx, by, bx+width, by+height)
           val segment = ImageSegment(imp, box)
           segs += segment
         }
       }
       else {
-        val box = ImageSegmenter.Box(bx, by, bx+width, by+height)
+        val box = Box(bx, by, bx+width, by+height)
         val segment = ImageSegment(imp, box)
         smallSegs += segment
       }
@@ -134,25 +134,25 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
       val segContent = segHisto(0).toDouble / segArea
       logger.debug(s"segContent=$segContent")
 
-      val up = ImageSegmenter.Box(seg.box.x,seg.box.y-seg.box.height,seg.box.x2,seg.box.y-1)
+      val up = Box(seg.box.x,seg.box.y-seg.box.height,seg.box.x2,seg.box.y-1)
       imp3.setRoi(up.toRoi)
       val upHisto = imp3.getProcessor.getHistogram
       val upContent = upHisto(0).toDouble / segArea
       logger.debug(s"upContent=$upContent")
 
-      val down = ImageSegmenter.Box(seg.box.x,seg.box.y+seg.box.height+1,seg.box.x2,seg.box.y2+seg.box.height)
+      val down = Box(seg.box.x,seg.box.y+seg.box.height+1,seg.box.x2,seg.box.y2+seg.box.height)
       imp3.setRoi(down.toRoi)
       val downHisto = imp3.getProcessor.getHistogram
       val downContent = downHisto(0).toDouble / segArea
       logger.debug(s"downContent=$downContent")
 
-      val left = ImageSegmenter.Box(seg.box.x-seg.box.width,seg.box.y,seg.box.x-1,seg.box.y2)
+      val left = Box(seg.box.x-seg.box.width,seg.box.y,seg.box.x-1,seg.box.y2)
       imp3.setRoi(left.toRoi)
       val leftHisto = imp3.getProcessor.getHistogram
       val leftContent = leftHisto(0).toDouble / segArea
       logger.debug(s"leftContent=$leftContent")
 
-      val right = ImageSegmenter.Box(seg.box.x+seg.box.width+1,seg.box.y,seg.box.x2+seg.box.width,seg.box.y2)
+      val right = Box(seg.box.x+seg.box.width+1,seg.box.y,seg.box.x2+seg.box.width,seg.box.y2)
       imp3.setRoi(right.toRoi)
       val rightHisto = imp3.getProcessor.getHistogram
       val rightContent = rightHisto(0).toDouble / segArea
@@ -228,7 +228,7 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
       // look for overlapping segments that overlap by at least MergeThreshold area amount
       val overlaps = rtree.search(seg.box.toRect).toBlocking.getIterator.asScala.filter{overlaps=>
         !useThreshold || {
-          val intersectionBox = ImageSegmenter.Box(
+          val intersectionBox = Box(
             math.max(seg.box.x, overlaps.value.box.x),
             math.max(seg.box.y, overlaps.value.box.y),
             math.min(seg.box.x2, overlaps.value.box.x2),
@@ -244,7 +244,7 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
       }.toSeq
       // build a merged segment
       val merged = ImageSegment(seg.imp,
-        ImageSegmenter.Box(
+        Box(
           (Seq(seg.box.x) ++ overlaps.map{_.value.box.x}).min,
           (Seq(seg.box.y) ++ overlaps.map{_.value.box.y}).min,
           (Seq(seg.box.x2) ++ overlaps.map{_.value.box.x2}).max,
@@ -260,7 +260,7 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
   // define case class orderings for the sorted set
   implicit def impOrder: Ordering[ImagePlus] =
     Ordering.by(i => i.asInstanceOf[AnyRef].hashCode)
-  implicit def boxOrder: Ordering[ImageSegmenter.Box[Int]] =
+  implicit def boxOrder: Ordering[Box] =
     Ordering.by(b => (b.x, b.x2, b.y, b.y2))
   implicit def imageSegOrder: Ordering[ImageSegment] =
     Ordering.by(i => (i.imp, i.box))
@@ -269,7 +269,7 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
   // sort by distance, then by merged area
   implicit def segPairOrder: Ordering[SegPair] =
     Ordering.by{p =>
-      val box = ImageSegmenter.Box(
+      val box = Box(
         math.min(p.segment.segment.box.x, p.nearest.segment.box.x),
         math.min(p.segment.segment.box.y, p.nearest.segment.box.y),
         math.max(p.segment.segment.box.x2, p.nearest.segment.box.x2),
@@ -288,7 +288,7 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
       val overlaps = rtree.search(seg.segment.box.toRect).
         toBlocking.getIterator.asScala.
         map{overlaps=>
-          val intersectionBox = ImageSegmenter.Box(
+          val intersectionBox = Box(
             math.max(seg.segment.box.x, overlaps.value.segment.box.x),
             math.max(seg.segment.box.y, overlaps.value.segment.box.y),
             math.min(seg.segment.box.x2, overlaps.value.segment.box.x2),
@@ -308,7 +308,7 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
       // build a merged segment
       val merged = Segment(
         ImageSegment(seg.segment.imp,
-          ImageSegmenter.Box(
+          Box(
             (Seq(seg.segment.box.x) ++ overlaps.map{_._1.value.segment.box.x}).min,
             (Seq(seg.segment.box.y) ++ overlaps.map{_._1.value.segment.box.y}).min,
             (Seq(seg.segment.box.x2) ++ overlaps.map{_._1.value.segment.box.x2}).max,
@@ -437,7 +437,7 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
       }
       //val rois = groups.toSeq.map{case (i,g)=>
       //  s"$i"->g.map{s=>s.segment.box}.reduce((a,b) =>
-      //    ImageSegmenter.Box(
+      //    Box(
       //      Seq(a.x, b.x).min,
       //      Seq(a.y, b.y).min,
       //      Seq(a.x2, b.x2).max,
@@ -452,7 +452,7 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
       g.reduce((a,b) =>
         Segment(
           ImageSegment(a.segment.imp,
-            ImageSegmenter.Box(
+            Box(
               Seq(a.segment.box.x, b.segment.box.x).min,
               Seq(a.segment.box.y, b.segment.box.y).min,
               Seq(a.segment.box.x2, b.segment.box.x2).max,

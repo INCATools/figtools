@@ -50,5 +50,7 @@ object Commands {
     @HelpMessage("Data Path for Tesseract OCR")
     @ValueDescription("PATH")
     dataPath: String = sys.env.getOrElse("TESSDATA_PREFIX", "."),
+    @HelpMessage("Output results as JSON")
+    json: Boolean = false,
   ) extends Main
 }

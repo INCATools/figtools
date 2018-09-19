@@ -126,9 +126,13 @@ object FigTools extends CommandApp[Main] {
           debug,
           Some(analyze.common.url),
           File(analyze.dataPath)).analyze()
-        println(pprint.apply(results, height=100000))
-        val json = writePretty(results)
-        println(json)
+        if (analyze.json) {
+          val json = writePretty(results)
+          println(json)
+        }
+        else {
+          println(pprint.apply(results, height=100000))
+        }
     }
   }
 

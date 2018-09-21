@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-TESSDATA_PREFIX=${TESSDATA_PREFIX-$(for d in /usr/local/opt/tesseract/share /usr/share /usr/local/share /opt/tesseract/share; test -d "$d/tessdata" && echo "$d" && break; done)}
+TESSDATA_PREFIX=${TESSDATA_PREFIX-$(for d in /usr/local/opt/tesseract/share /usr/share /usr/share/tesseract-ocr /usr/local/share /opt/tesseract/share; test -d "$d/tessdata" && echo "$d" && break; done)}
 PCTMEMORY=${PCTMEMORY-75}
 MEMORY=${MEMORY-$(m=$(sysctl -n hw.memsize 2>/dev/null || free -b|perl -0777 -ne 'print [/^Mem:\s+([0-9]+)/ms]->[0]' 2>/dev/null ||true); [[ -n $m ]] && echo $(( m * $PCTMEMORY / 100 / 1048576 ))m)}
 test ! -e "$HOME/.ivy2/cache/org.scala-lang/scalap/jars/scalap-2.12.5.jar" && mkdir -p "$HOME/.ivy2/cache/org.scala-lang/scalap/jars" && (set -x; curl -Sso "$HOME/.ivy2/cache/org.scala-lang/scalap/jars/scalap-2.12.5.jar" 'https://repo1.maven.org/maven2/org/scala-lang/scalap/2.12.5/scalap-2.12.5.jar')

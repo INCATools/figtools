@@ -4,7 +4,7 @@ install:
     - sudo apt-get update -qq
     - sudo apt-get install -qq tesseract-ocr tesseract-ocr-eng
 script:
-    - TESSDATA_PREFIX=$(p=(/usr/share/tesseract-ocr/*/tessdata); echo "${p[-1]}") sbt test
+    - TESSDATA_PREFIX=/usr/share/tesseract-ocr sbt test
 
 cache:
   directories:

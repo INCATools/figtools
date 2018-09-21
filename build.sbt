@@ -30,6 +30,7 @@ lazy val figtools = (project in file(".")).
       "/usr/local/opt/tesseract/share",
       "/opt/tesseract/share",
       "/usr/share",
+      "/usr/share/tesseract-ocr",
       "/usr/local/share").
       find{d=>new java.io.File(s"$d/tessdata").isDirectory}.getOrElse("")),
     resourceDirectory in Compile := baseDirectory.value / "resources",
@@ -95,7 +96,7 @@ lazy val figtools = (project in file(".")).
       val prependShellScript =
         s"""#!/usr/bin/env bash
 ${"""
-TESSDATA_PREFIX=${TESSDATA_PREFIX-$(for d in /usr/local/opt/tesseract/share /usr/share /usr/local/share /opt/tesseract/share; test -d "$d/tessdata" && echo "$d" && break; done)}
+TESSDATA_PREFIX=${TESSDATA_PREFIX-$(for d in /usr/local/opt/tesseract/share /usr/share /usr/share/tesseract-ocr /usr/local/share /opt/tesseract/share; test -d "$d/tessdata" && echo "$d" && break; done)}
 PCTMEMORY=${PCTMEMORY-75}
 MEMORY=${MEMORY-$(m=$(sysctl -n hw.memsize 2>/dev/null || free -b|perl -0777 -ne 'print [/^Mem:\s+([0-9]+)/ms]->[0]' 2>/dev/null ||true); [[ -n $m ]] && echo $(( m * $PCTMEMORY / 100 / 1048576 ))m)}"""}
 ${depsScript.mkString("\n")}

@@ -141,17 +141,11 @@ object FigTools extends CommandApp[Main] {
       val ij1 = LegacyService.getInstance.getIJ1Helper
       val method = ij1.getClass.getDeclaredMethod("runMacroFriendly", classOf[Callable[_]])
       method.setAccessible(true)
-      val thread = new Thread("IJ macro") {
-        override def run() = {
-          method.invoke(ij1, new Callable[Unit] {
-            override def call(): Unit = {
-              block
-            }
-          })
+      method.invoke(ij1, new Callable[Unit] {
+        override def call(): Unit = {
+          block
         }
-      }
-      thread.start()
-      thread.join()
+      })
     }
     def run(imp: ImagePlus, command: String, options: String): Unit = {
       run {

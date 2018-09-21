@@ -5,11 +5,8 @@ import java.util.Properties
 import java.util.regex.Pattern
 
 import better.files._
-import edu.stanford.nlp.ling.CoreAnnotations.SentencesAnnotation
-import edu.stanford.nlp.pipeline.{Annotation, StanfordCoreNLP}
 
 import collection.JavaConverters._
-import edu.stanford.nlp.util.logging.RedwoodConfiguration
 import figtools.ImageSegmenter.ImageSegment
 import net.sourceforge.tess4j.ITessAPI.TessPageIteratorLevel
 
@@ -66,10 +63,10 @@ class AnalyzeImage
     sys.exit(1)
   }
   // turn off CoreNLP logging
-  RedwoodConfiguration.current.clear.apply()
-  val props = new Properties()
-  props.setProperty("annotators", "tokenize, ssplit, pos, lemma, ner, parse, dcoref")
-  val pipeline = new StanfordCoreNLP(props)
+  //RedwoodConfiguration.current.clear.apply()
+  //val props = new Properties()
+  //props.setProperty("annotators", "tokenize, ssplit, pos, lemma, ner, parse, dcoref")
+  //val pipeline = new StanfordCoreNLP(props)
 
   def analyze(): AnalysisResults = {
     val results = new util.LinkedHashMap[String, ImageResults]().asScala
@@ -101,14 +98,14 @@ class AnalyzeImage
     logger.debug(s"file=$datapackage")
     logger.debug(s"description_nohtml=\n$description_nohtml")
 
-    val document = new Annotation(description_nohtml)
-    pipeline.annotate(document)
-    val sentences = document.get(classOf[SentencesAnnotation])
+    //val document = new Annotation(description_nohtml)
+    //pipeline.annotate(document)
+    //val sentences = document.get(classOf[SentencesAnnotation])
 
-    for (sentence <- sentences.asScala) {
-      logger.debug(s"sentence=${sentence.toString}")
-    }
-    logger.debug("")
+    //for (sentence <- sentences.asScala) {
+    //  logger.debug(s"sentence=${sentence.toString}")
+    //}
+    //logger.debug("")
 
     val results = new util.LinkedHashMap[String, LabelResults].asScala
     val resources = json.resources.toList

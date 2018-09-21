@@ -27,7 +27,7 @@ object FigTools extends CommandApp[Main] {
 
   val logger = Logger(getClass.getSimpleName)
   val edgeDetectors = Map(
-    "susan"->EdgeDetectors.Susan,
+    //"susan"->EdgeDetectors.Susan,
     "imagej"->EdgeDetectors.ImageJ)
   var edgeDetector: String = _
   var pdfExportResolution: Int = _

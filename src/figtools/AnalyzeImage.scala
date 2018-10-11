@@ -1,7 +1,6 @@
 package figtools
 
 import java.awt.GraphicsEnvironment
-import java.util.Properties
 import java.util.regex.Pattern
 
 import better.files._
@@ -161,9 +160,7 @@ class AnalyzeImage
         val hasCaptions = captionGroups.
           flatMap { cg => cg.captions }.
           flatMap { cs => cs.label }.
-          map {
-            _.toUpperCase
-          }.toSet
+          map {l=> l.toUpperCase->l }.toMap
         if (hasCaptions.size <= 1) {
           logger.warn(s"File $imageFile only has a single caption, no need to segment the image.")
           break
@@ -233,10 +230,10 @@ class AnalyzeImage
               val label = caption.label(li)
               val index = caption.index(li)
               val ucLabel = label.toUpperCase
-              if (hasCaptions.contains(ucLabel)) {
+              for (lcLabel <- hasCaptions.get(ucLabel)) {
                 logger.debug(s"Assigning label $label to segment seg$i}")
                 segmentDescriptions.getOrElseUpdate(i, mutable.SortedSet()) +=
-                  SegmentDescription(ucLabel, index, Some(word), i)
+                  SegmentDescription(lcLabel, index, Some(word), i)
               }
             }
           }
@@ -284,10 +281,10 @@ class AnalyzeImage
             // reward segments with only one label to discourage undersegmentation
             if (sdsSeq.size === 1) score += 1000
             for ((sd, sdsIndex) <- sdsSeq.zipWithIndex) {
-              val sdo = captionOrder(sd.label)
+              val sdo = captionOrder(sd.label.toUpperCase)
               if (sdsIndex < sdsSeq.size - 1) {
                 val nextSd = sdsSeq(sdsIndex + 1)
-                val next = captionOrder(nextSd.label)
+                val next = captionOrder(nextSd.label.toUpperCase)
                 // reward when the next segment's caption is the next in sequence
                 if (next - sdo === 1) score += 1000
                 // smaller reward when the next segment's caption is in the right direction,
@@ -351,8 +348,8 @@ class AnalyzeImage
           captionLabels += sds.map{_.label}.mkString(" ")->new Roi(
             rect.x1.toInt,
             rect.y1.toInt,
-            rect.x2.toInt,
-            rect.y2.toInt)
+            rect.x2.toInt-rect.x1.toInt+1,
+            rect.y2.toInt-rect.y1.toInt+1)
           for {
             s <- sds
             w <- s.word
@@ -365,9 +362,6 @@ class AnalyzeImage
           }
         }
         log(imp, "[FigTools] Show caption labels", captionLabels: _*)
-        logger.debug(s"captionGroups=${pp(captionGroups)}")
-        logger.debug(s"bestFixedSegDescrs=${pp(bestFixedSegDescrs)}")
-        logger.debug(s"""Please close image window "${imp.getTitle}" to load next image...""")
 
         // add to results map
         val descriptions = new util.LinkedHashMap[String,ArrayBuffer[String]]().asScala
@@ -388,9 +382,12 @@ class AnalyzeImage
             captions(l) += Box(rect.x1.toInt, rect.y1.toInt, rect.x2.toInt, rect.y2.toInt)
           }
         }
-        results(resource.name.toStr) = (descriptions.keySet ++ captions.keySet).
+        val result = (descriptions.keySet ++ captions.keySet).
           map{s=> s->LabelResult(descriptions.getOrElse(s, Seq()), captions.getOrElse(s, Seq()))}.toMap
+        logger.info(s"result=${pp(result)}")
+        results(resource.name.toStr) = result
 
+        logger.info(s"""Please close image window "${imp.getTitle}" to load next image...""")
         // wait for user to close the image
         if (!GraphicsEnvironment.isHeadless) {
           while (WindowManager.getWindowCount > 0) Thread.sleep(200)

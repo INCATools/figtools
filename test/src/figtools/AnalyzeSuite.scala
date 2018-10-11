@@ -66,4 +66,43 @@ class AnalyzeSuite extends FunSuite {
       )
     )))
   }
+
+  test("ID 3872106") {
+    assert(compareResults(
+      new AnalyzeImage(dir=TestDir, ids=Seq("3872106"), url=Some(Url)).analyze(),
+      Map(
+        "a" -> LabelResult(
+          ArrayBuffer(
+            "(a): \u03b3ECS activity in the roots; "
+          ),
+          ArrayBuffer(Box(17, 10, 2177, 1262))
+        ),
+        "b" -> LabelResult(
+          ArrayBuffer(
+            "(b): GSHS activity in the roots; "
+          ),
+          ArrayBuffer(
+            Box(11, 1261, 2171, 2548)
+          )
+        ),
+        "c" -> LabelResult(
+          ArrayBuffer(
+            "(c): \u03b3ECS activity in the leaves; "
+          ),
+          ArrayBuffer(
+            Box(2178, 10, 4290, 1260)
+          )
+        ),
+        "d" -> LabelResult(
+          ArrayBuffer(
+            "(d): GSHS activity in the leaves. (For details see legend of Table 1)."
+          ),
+          ArrayBuffer(
+            Box(2172, 1261, 4290, 2548)
+          )
+        )
+      )
+  }
+
+
 }

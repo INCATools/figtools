@@ -333,6 +333,9 @@ class AnalyzeImage
                 rtree = rtree.delete(Entries.entry(sds, s.box.toRect), true)
                 rtree = rtree.add(Entries.entry(merged, box.toRect))
               }
+              else {
+                rtree = rtree.add(Entries.entry(sds, s.box.toRect))
+              }
             case None =>
               rtree = rtree.add(Entries.entry(sds, s.box.toRect))
           }

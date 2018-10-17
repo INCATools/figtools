@@ -27,6 +27,9 @@ object GappedImageSegmenter {
   val SegmentAreaCutoff = 0.4
   val ContentDiff = 0.1
   val ContentMin = 0.01
+  val PreferAdjacent = 2.0
+  val PreferAdjacentMargin = 0.05
+
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
 
   case class Segment(segment: ImageSegment, group: Int)
@@ -38,17 +41,15 @@ object GappedImageSegmenter {
 //   - check matching border colors
 class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
   import GappedImageSegmenter._
-  val logger = Logger(getClass.getSimpleName)
-
   override def segment(imp: ImagePlus): Seq[ImageSegment] = {
     val imp2 = imp.duplicate()
-    //log(imp2, "[GappedImageSegmenter] original image")
+    //log.image(imp2, "[GappedImageSegmenter] original image")
 
     // binarize the image using a threshold of 0.95
     val threshold = (255.0 * BinarizeThreshold).toInt
     val lut = (0 until 256).map{v=>if (v < threshold) 0 else 255.toByte.toInt}.toArray
     imp2.getProcessor.applyTable(lut)
-    log(imp2, s"[GappedImageSegmenter] Binarize with $threshold threshold")
+    log.image(imp2, s"[GappedImageSegmenter] Binarize with $threshold threshold")
 
     val rt = new ResultsTable
     val particleAnalyzer = new ParticleAnalyzer(
@@ -68,7 +69,7 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
         rt.getValue("BY", i).toInt,
         rt.getValue("Width", i).toInt,
         rt.getValue("Height", i).toInt)}
-    log(imp2, s"[GappedImageSegmenter] Particle Analyzer", particles: _*)
+    log.image(imp2, s"[GappedImageSegmenter] Particle Analyzer", particles: _*)
 
     // Get the objects and iterate through them
     var segs = ArrayBuffer[ImageSegment]()
@@ -94,14 +95,14 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
         smallSegs += segment
       }
     }
-    log(imp2,
+    log.image(imp2,
       s"[GappedImageSegmenter] filter boxes smaller than (${(imp2.getWidth.toDouble / ParticleThreshold).toInt},${(imp2.getHeight.toDouble / ParticleThreshold).toInt})",
       segs.map{_.box.toRoi}: _*)
 
     val mergedSegs = mergeOverlappingSegs(segs)
     segs = ArrayBuffer(mergedSegs: _*)
-    logger.debug(s"mergedSegs=${pprint.apply(mergedSegs, height=1000)}")
-    log(imp2, "[GappedImageSegmenter] merge overlapping segments", mergedSegs.map{_.box.toRoi}: _*)
+    log.debug(s"mergedSegs=${pprint.apply(mergedSegs, height=1000)}")
+    log.image(imp2, "[GappedImageSegmenter] merge overlapping segments", mergedSegs.map{_.box.toRoi}: _*)
 
     // temporarily eliminate small components
     val (larger, smaller) = segs.sortBy({seg=>
@@ -118,10 +119,10 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
             (seg.box.y2 - seg.box.y).toDouble / (largest.box.y2 - largest.box.y).toDouble > BboxThreshold))
         (larger, smaller)
       case None =>
-        logger.warn(s"No largest bounding box found!")
+        log.warn(s"No largest bounding box found!")
         (segs, Seq())
     }
-    log(imp2, "[GappedImageSegmenter] temporarily eliminate small components", larger.map{s=>s.box.toRoi}: _*)
+    log.image(imp2, "[GappedImageSegmenter] temporarily eliminate small components", larger.map{s=>s.box.toRoi}: _*)
 
     // recover missing panels
     val imp3 = imp2.duplicate()
@@ -132,31 +133,31 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
       val segArea = ((seg.box.x2 - seg.box.x) * (seg.box.y2 - seg.box.y)).toDouble
       val segHisto = imp3.getProcessor.getHistogram
       val segContent = segHisto(0).toDouble / segArea
-      logger.debug(s"segContent=$segContent")
+      log.debug(s"segContent=$segContent")
 
       val up = Box(seg.box.x,seg.box.y-seg.box.height,seg.box.x2,seg.box.y-1)
       imp3.setRoi(up.toRoi)
       val upHisto = imp3.getProcessor.getHistogram
       val upContent = upHisto(0).toDouble / segArea
-      logger.debug(s"upContent=$upContent")
+      log.debug(s"upContent=$upContent")
 
       val down = Box(seg.box.x,seg.box.y+seg.box.height+1,seg.box.x2,seg.box.y2+seg.box.height)
       imp3.setRoi(down.toRoi)
       val downHisto = imp3.getProcessor.getHistogram
       val downContent = downHisto(0).toDouble / segArea
-      logger.debug(s"downContent=$downContent")
+      log.debug(s"downContent=$downContent")
 
       val left = Box(seg.box.x-seg.box.width,seg.box.y,seg.box.x-1,seg.box.y2)
       imp3.setRoi(left.toRoi)
       val leftHisto = imp3.getProcessor.getHistogram
       val leftContent = leftHisto(0).toDouble / segArea
-      logger.debug(s"leftContent=$leftContent")
+      log.debug(s"leftContent=$leftContent")
 
       val right = Box(seg.box.x+seg.box.width+1,seg.box.y,seg.box.x2+seg.box.width,seg.box.y2)
       imp3.setRoi(right.toRoi)
       val rightHisto = imp3.getProcessor.getHistogram
       val rightContent = rightHisto(0).toDouble / segArea
-      logger.debug(s"rightContent=$rightContent")
+      log.debug(s"rightContent=$rightContent")
 
       (if (math.abs(segContent-upContent) < ContentDiff &&
         upContent > ContentMin &&
@@ -186,35 +187,35 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
     // TODO: fix recover missing panels code
     //segs = larger ++ recoverMissing
     segs = larger
-    //log(imp2, "[GappedImageSegmenter] recover missing panels", recoverMissing.map{s=>s.box.toRoi}: _*)
+    //log.image(imp2, "[GappedImageSegmenter] recover missing panels", recoverMissing.map{s=>s.box.toRoi}: _*)
 
     //check segmentation area
     val segmentArea = segs.map{s=>(s.box.x2-s.box.x)*(s.box.y2-s.box.y)}.sum
     val imageArea = imp2.getWidth * imp2.getHeight
     if (segmentArea.toDouble / imageArea.toDouble < SegmentAreaCutoff) {
-      logger.warn(s"Image segment area is $segmentArea/$imageArea=${segmentArea.toDouble/imageArea.toDouble} is less than $SegmentAreaCutoff, skipping")
+      log.warn(s"Image segment area is $segmentArea/$imageArea=${segmentArea.toDouble/imageArea.toDouble} is less than $SegmentAreaCutoff, skipping")
       return Seq()
     }
 
     // run small components recovery step
-    log(imp2, "[GappedImageSegmenter] recover small components, segs",
+    log.image(imp2, "[GappedImageSegmenter] recover small components, segs",
       segs.map{s=>s.box.toRoi}: _*)
-    log(imp2, "[GappedImageSegmenter] recover small components, smaller",
+    log.image(imp2, "[GappedImageSegmenter] recover small components, smaller",
       smaller.map{s=>s.box.toRoi}: _*)
-    log(imp2, "[GappedImageSegmenter] recover small components, smallSegs",
+    log.image(imp2, "[GappedImageSegmenter] recover small components, smallSegs",
       smallSegs.map{s=>s.box.toRoi}: _*)
     val toRecover = segs.zipWithIndex.
       map{case (s,i)=>GappedImageSegmenter.Segment(s, i)} ++
       (smaller ++ smallSegs).zipWithIndex.
         map{case (s,i)=>GappedImageSegmenter.Segment(s, -(i+1))}
-    logger.debug(s"Running recover small components step")
+    log.debug(s"Running recover small components step")
     val recovered = recoverSmallComponents(imp2, toRecover)
-    logger.debug(s"Finished running recover small components step")
+    log.debug(s"Finished running recover small components step")
 
-    log(imp2, "[GappedImageSegmenter] recover small components",
+    log.image(imp2, "[GappedImageSegmenter] recover small components",
       recovered.map{s=>s.segment.box.toRoi}: _*)
     val mergedRecovered = mergeOverlappingSegs(recovered.map{s=>s.segment})
-    log(imp2, "[GappedImageSegmenter] recover small components, merged",
+    log.image(imp2, "[GappedImageSegmenter] recover small components, merged",
       mergedRecovered.map{s=>s.box.toRoi}: _*)
     segs = ArrayBuffer(mergedRecovered: _*)
     segs
@@ -282,7 +283,7 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
 
   def recoverSmallComponents(imp: ImagePlus, segs: Seq[Segment]): Seq[Segment] = {
     // build the r-tree by merging all the overlapping components
-    logger.debug(s"building merged r-tree using ${segs.size} segs")
+    log.debug(s"building merged r-tree using ${segs.size} segs")
     var rtree = RTree.create[Segment,Rectangle]()
     for (seg <- segs) {
       val overlaps = rtree.search(seg.segment.box.toRect).
@@ -319,18 +320,39 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
       // add the merged segment
       rtree = rtree.add(Entries.entry(merged, merged.segment.box.toRect))
     }
-    logger.debug(s"built merged r-tree with ${rtree.size} elements")
+    log.debug(s"built merged r-tree with ${rtree.size} elements")
 
     // set of each segment paired with its nearest neighbor, sorted by minimum distance
     val segpairs = mutable.SortedSet[SegPair](
       rtree.entries.toBlocking.getIterator.asScala.map{_.value}.
       flatMap(entry=>{
-        val nearest = rtree.nearest(entry.segment.box.toRect, Double.MaxValue, Int.MaxValue).
+        // first try to get nearest adjacent, then nearest diagonal
+        val nearestAny = rtree.nearest(entry.segment.box.toRect, Double.MaxValue, Int.MaxValue).
+            filter{e=>
+              (e.value.segment.box !== entry.segment.box) &&
+                !(e.value.group >= 0 &&
+                  entry.group >= 0)}.
+            toBlocking.getIterator.asScala.take(1).toList
+        val searchDist = nearestAny match {
+          case n::_ => n.geometry().distance(entry.segment.box.toRect) * PreferAdjacent
+          case _ => 0
+        }
+        val nearestAdjacent = rtree.nearest(entry.segment.box.toRect, Double.MaxValue, Int.MaxValue).
           filter{e=>
             (e.value.segment.box !== entry.segment.box) &&
               !(e.value.group >= 0 &&
-                entry.group >= 0)}.
-          toBlocking.getIterator.asScala.toSeq
+                entry.group >= 0) &&
+              ((e.value.segment.box.x <= entry.segment.box.x2+searchDist &&
+                e.value.segment.box.y <= entry.segment.box.y2-(entry.segment.box.height*PreferAdjacentMargin) &&
+                entry.segment.box.x-searchDist <= e.value.segment.box.x2 &&
+                entry.segment.box.y+(entry.segment.box.height*PreferAdjacentMargin) <= e.value.segment.box.y2) ||
+                ( e.value.segment.box.x <= entry.segment.box.x2-(entry.segment.box.width*PreferAdjacentMargin) &&
+                  e.value.segment.box.y <= entry.segment.box.y2+searchDist &&
+                  entry.segment.box.x+(entry.segment.box.width*PreferAdjacentMargin) <= e.value.segment.box.x2 &&
+                  entry.segment.box.y-searchDist <= e.value.segment.box.y2))
+          }.toBlocking.getIterator.asScala.take(1).toList
+        val nearest = if (nearestAdjacent.nonEmpty) nearestAdjacent else nearestAny
+        //val nearest = nearestAdjacent
         if (nearest.isEmpty) None else Some(SegPair(
           entry,
           nearest.head.value))
@@ -350,7 +372,7 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
     while (segpairs.nonEmpty) {
       // pop the first pair from the set
       val pair = segpairs.head
-      logger.debug(s"pair=${pp(pair)}")
+      log.debug(s"pair=${pp(pair)}")
       val segpairsSize = segpairs.size
       segpairs -= pair
       assert(segpairsSize-1 === segpairs.size)
@@ -358,14 +380,14 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
       // negative numbers are mergeable
       val pairsegs = Seq(pair.segment, pair.nearest)
       val group = pairsegs.map{_.group}.max
-      logger.debug(s"group=$group")
+      log.debug(s"group=$group")
       // figure out what needs to be re-grouped
       val toGroup = (pairsegs ++
         pairsegs.filter{s=>s.group !== group}.flatMap{s=>groups(s.group)}).toSet
-      logger.debug(s"toGroup=${pp(toGroup)}")
+      log.debug(s"toGroup=${pp(toGroup)}")
       // create the grouped segments
       val grouped = toGroup.map{s=>Segment(s.segment, group)}
-      logger.debug(s"grouped=${pp(grouped)}")
+      log.debug(s"grouped=${pp(grouped)}")
 
       // delete the old segments from rtree, segpairs, segindex, and groups
       val rtreeSize = rtree.size
@@ -375,17 +397,17 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
       assert(rtreeSize-toGroup.size === rtree.size,
         s"rtreeSize($rtreeSize)-toGroup(${pp(toGroup)}) != rtree.size(${rtree.size})")
 
-      val pairsToRemove = toGroup.flatMap{tg=>segIndex.get(tg)}.toSet - pair
-      val intersect = segpairs.intersect(pairsToRemove)
-      assert(pairsToRemove.size === intersect.size,
-        s"pairsToRemove=${pp(pairsToRemove)}, intersect=${pp(intersect)}")
-      val segpairsSize2 = segpairs.size
+      val pairsToRemove = toGroup.flatMap{tg=>segIndex.get(tg)} - pair
+      //val intersect = segpairs.intersect(pairsToRemove)
+//      assert(pairsToRemove.size === intersect.size,
+//        s"pairsToRemove=${pp(pairsToRemove)}, intersect=${pp(intersect)}")
+      //val segpairsSize2 = segpairs.size
       segpairs --= pairsToRemove
-      assert(segpairsSize2-pairsToRemove.size === segpairs.size)
+      //assert(segpairsSize2-pairsToRemove.size === segpairs.size)
 
-      val segIndexSize = segIndex.size
+      //val segIndexSize = segIndex.size
       segIndex --= toGroup
-      assert(segIndexSize-toGroup.size === segIndex.size)
+      //assert(segIndexSize-toGroup.size === segIndex.size)
       toGroup.foreach{tg=>
         groups.removeBinding(tg.group, tg)
       }
@@ -394,14 +416,36 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
       for (g <- grouped) {
         rtree = rtree.add(Entries.entry(g, g.segment.box.toRect))
         groups.addBinding(g.group, g)
-        val groupedNearest = rtree.nearest(g.segment.box.toRect, Double.MaxValue, Int.MaxValue).
+        val groupedNearestAny = rtree.nearest(g.segment.box.toRect, Double.MaxValue, Int.MaxValue).
           filter { e =>
             (e.value.segment.box !== g.segment.box) &&
               (e.value.group !== g.group) &&
               !(e.value.group >= 0 &&
                 g.group >= 0)
           }.
-          toBlocking.getIterator.asScala.toSeq.headOption
+          toBlocking.getIterator.asScala.take(1).toList
+        val searchDist = groupedNearestAny match {
+          case n::_ => n.geometry().distance(g.segment.box.toRect) * PreferAdjacent
+          case _ => 0
+        }
+        val groupedNearestAdjacent = rtree.nearest(g.segment.box.toRect, Double.MaxValue, Int.MaxValue).
+          filter { e =>
+            (e.value.segment.box !== g.segment.box) &&
+              (e.value.group !== g.group) &&
+              !(e.value.group >= 0 &&
+                g.group >= 0) &&
+              ((e.value.segment.box.x <= g.segment.box.x2+searchDist &&
+                e.value.segment.box.y <= g.segment.box.y2-(g.segment.box.height*PreferAdjacentMargin) &&
+                g.segment.box.x-searchDist <= e.value.segment.box.x2 &&
+                g.segment.box.y+(g.segment.box.height*PreferAdjacentMargin) <= e.value.segment.box.y2) ||
+                ( e.value.segment.box.x <= g.segment.box.x2-(g.segment.box.width*PreferAdjacentMargin) &&
+                  e.value.segment.box.y <= g.segment.box.y2+searchDist &&
+                  g.segment.box.x+(g.segment.box.width*PreferAdjacentMargin) <= e.value.segment.box.x2 &&
+                  g.segment.box.y-searchDist <= e.value.segment.box.y2))
+          }.
+          toBlocking.getIterator.asScala.take(1).toList
+        val groupedNearest = if (groupedNearestAdjacent.nonEmpty) groupedNearestAdjacent else groupedNearestAny
+        //val groupedNearest = groupedNearestAdjacent
         for (gn <- groupedNearest) {
           // add new merged pair
           val groupedPair = SegPair(g, gn.value)
@@ -419,13 +463,35 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
         for (sp <- sps) {
           if (segpairs.contains(sp)) {
             segpairs -= sp
-            val nearests = rtree.nearest(sp.segment.segment.box.toRect, Double.MaxValue, Int.MaxValue).
+            val nearestsAny = rtree.nearest(sp.segment.segment.box.toRect, Double.MaxValue, Int.MaxValue).
               filter{e=>
                 (e.value.segment.box !== sp.segment.segment.box) &&
                   (e.value.group !== sp.segment.group) &&
                   !(e.value.group >= 0 &&
-                    sp.segment.group >= 0)}.
-              toBlocking.getIterator.asScala.toSeq.headOption
+                    sp.segment.group >= 0)
+              }.
+              toBlocking.getIterator.asScala.take(1).toList
+            val searchDist = nearestsAny match {
+              case n::_ => n.geometry().distance(sp.segment.segment.box.toRect) * PreferAdjacent
+              case _ => 0
+            }
+            val nearestsAdjacent = rtree.nearest(sp.segment.segment.box.toRect, Double.MaxValue, Int.MaxValue).
+              filter{e=>
+                (e.value.segment.box !== sp.segment.segment.box) &&
+                  (e.value.group !== sp.segment.group) &&
+                  !(e.value.group >= 0 &&
+                    sp.segment.group >= 0) &&
+                ((e.value.segment.box.x < sp.segment.segment.box.x2+searchDist &&
+                  e.value.segment.box.y < sp.segment.segment.box.y2-(sp.segment.segment.box.height*PreferAdjacentMargin) &&
+                  sp.segment.segment.box.x-searchDist < e.value.segment.box.x2 &&
+                  sp.segment.segment.box.y+(sp.segment.segment.box.height*PreferAdjacentMargin) < e.value.segment.box.y2) ||
+                  ( e.value.segment.box.x < sp.segment.segment.box.x2-(sp.segment.segment.box.width*PreferAdjacentMargin) &&
+                    e.value.segment.box.y < sp.segment.segment.box.y2+searchDist &&
+                    sp.segment.segment.box.x+(sp.segment.segment.box.width*PreferAdjacentMargin) < e.value.segment.box.x2 &&
+                    sp.segment.segment.box.y-searchDist < e.value.segment.box.y2))
+              }.toBlocking.getIterator.asScala.take(1).toList
+            val nearests = if (nearestsAdjacent.nonEmpty) nearestsAdjacent else nearestsAny
+            //val nearests = nearestsAdjacent
             for (nearest <- nearests) {
               val updatedSp = SegPair(sp.segment, nearest.value)
               segpairs += updatedSp
@@ -435,19 +501,19 @@ class GappedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
           }
         }
       }
-      //val rois = groups.toSeq.map{case (i,g)=>
-      //  s"$i"->g.map{s=>s.segment.box}.reduce((a,b) =>
-      //    Box(
-      //      Seq(a.x, b.x).min,
-      //      Seq(a.y, b.y).min,
-      //      Seq(a.x2, b.x2).max,
-      //      Seq(a.y2, b.y2).max)
-      //  ).toRoi
-      //}
+      val rois = groups.toSeq.map{case (i,g)=>
+        s"$i"->g.map{s=>s.segment.box}.reduce((a,b) =>
+          Box(
+            Seq(a.x, b.x).min,
+            Seq(a.y, b.y).min,
+            Seq(a.x2, b.x2).max,
+            Seq(a.y2, b.y2).max)
+        ).toRoi
+      }
       //log.step(imp, s"[GappedImageSegmenter] recover small components step, rois.size=${rois.size}", rois: _*)
     }
     // return the remaining r-tree entries
-    logger.debug(s"return merged group entries")
+    log.debug(s"return merged group entries")
     val mergedSegments = groups.map{case (i,g)=>
       g.reduce((a,b) =>
         Segment(

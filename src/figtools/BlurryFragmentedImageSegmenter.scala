@@ -9,10 +9,8 @@ import de.sciss.equal.Implicits._
 import figtools.FigTools.IJ
 
 class BlurryFragmentedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
-  val logger = Logger(getClass.getSimpleName)
-
   override def segment(imp: ImagePlus): Seq[ImageSegment] = {
-    //log(imp, "[BlurryFragmentedImageSegmenter] original image")
+    //log.image(imp, "[BlurryFragmentedImageSegmenter] original image")
 
     val edgeDetector = FigTools.edgeDetectors(FigTools.edgeDetector)
     val edgeImage = edgeDetector.run(imp)
@@ -55,7 +53,7 @@ class BlurryFragmentedImageSegmenter()(implicit log: ImageLog) extends ImageSegm
     // dilate using minimum gap width
     for (mgs <- minGapSize) {
       IJ.run(edgeImage, "Gray Morphology", s"radius=$mgs type=circle operator=dilate")
-      log(edgeImage, "[BlurryFragmentedImageSegmenter] dilated edge image")
+      log.image(edgeImage, "[BlurryFragmentedImageSegmenter] dilated edge image")
     }
 
     // apply cca method

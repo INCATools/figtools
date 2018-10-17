@@ -6,19 +6,17 @@ import scribe.Logger
 import de.sciss.equal.Implicits._
 
 class StitchedImageSegmenter()(implicit log: ImageLog) extends ImageSegmenter {
-  val logger = Logger(getClass.getSimpleName)
-
   override def segment(imp: ImagePlus): Seq[ImageSegment] = {
     val edgeDetector = FigTools.edgeDetectors(FigTools.edgeDetector)
     val edgeImage = edgeDetector.run(imp)
 
     val segments = segment0(ImageSegment(edgeImage,
       Box(0, 0, imp.getWidth-1, imp.getHeight-1)))
-    log(imp, "[StitchedImageSegmenter] split into segments",
+    log.image(imp, "[StitchedImageSegmenter] split into segments",
       segments.zipWithIndex.map{case (s,i)=>s"seg${i+1}"->s.box.toRoi}: _*)
     val MinLengthRatio = 0.2
     val result = segments.filter{seg=>seg.box.width >= MinLengthRatio && seg.box.height >= MinLengthRatio}
-    log(imp, s"[StitchedImageSegmenter] filter segments by MinLengthRatio $MinLengthRatio",
+    log.image(imp, s"[StitchedImageSegmenter] filter segments by MinLengthRatio $MinLengthRatio",
       result.zipWithIndex.map{case (s,i)=>s"seg${i+1}"->s.box.toRoi}: _*)
     result
   }

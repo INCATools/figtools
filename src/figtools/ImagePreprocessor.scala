@@ -9,17 +9,17 @@ import de.sciss.equal.Implicits._
 
 class ImagePreprocessor()(implicit log: ImageLog) {
   def preprocess(imp: ImagePlus): ImagePlus = {
-    //log(imp, "[ImagePreprocessor] original image")
+    //log.image(imp, "[ImagePreprocessor] original image")
 
     // convert to 8-bit grayscale
     new ImageConverter(imp).convertToGray8()
-    log(imp, "[ImagePreprocessor] convert to gray 8-bit")
+    log.image(imp, "[ImagePreprocessor] convert to gray 8-bit")
     // resize to 2x
     val resized = new ImagePlus()
     resized.setTitle(imp.getTitle())
     imp.getProcessor().setInterpolationMethod(ImageProcessor.BICUBIC)
     resized.setProcessor(imp.getProcessor.resize(imp.getWidth * 2, imp.getHeight * 2))
-    log(resized, "[ImagePreprocessor] resize to 2x")
+    log.image(resized, "[ImagePreprocessor] resize to 2x")
     // linear map the pixel values to [0.05, 0.95]
     val minPixel = (0.05 * 255.0).toInt
     val maxPixel = (0.95 * 255.0).toInt
@@ -29,14 +29,14 @@ class ImagePreprocessor()(implicit log: ImageLog) {
       else ((v-minPixel).toDouble / (maxPixel-minPixel+1).toDouble * 255.0).toInt
     }.toArray
     resized.getProcessor.applyTable(lut)
-    log(resized, s"[ImagePreprocessor] linear map the pixel values to $minPixel, $maxPixel")
+    log.image(resized, s"[ImagePreprocessor] linear map the pixel values to $minPixel, $maxPixel")
     // crop image borders by removing rows and columns of pixels whose maximum
     // gradient value is 0.
     val edges = new ImagePlus(resized.getTitle, resized.getProcessor.duplicate())
     edges.getProcessor.findEdges()
-    log(edges, "[ImagePreprocessor] find edges")
+    log.image(edges, "[ImagePreprocessor] find edges")
     val cropped = cropImageBorders(edges, 255.toByte.toInt).getOrElse(resized)
-    log(cropped, "[ImagePreprocessor] crop image borders")
+    log.image(cropped, "[ImagePreprocessor] crop image borders")
     // figure out if image is black or white background
     // compute histogram of pixel color values
     val histo = new mutable.HashMap[Int,Long]()
@@ -64,7 +64,7 @@ class ImagePreprocessor()(implicit log: ImageLog) {
     // if this image has a black background, invert it
     if (mode < (0.5 * 256.0).toInt) {
       cropped.getProcessor.invert()
-      log(cropped, "[ImagePreprocessor] invert image")
+      log.image(cropped, "[ImagePreprocessor] invert image")
     }
     cropped
   }

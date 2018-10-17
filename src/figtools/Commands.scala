@@ -52,5 +52,7 @@ object Commands {
     dataPath: String = sys.env.getOrElse("TESSDATA_PREFIX", "."),
     @HelpMessage("Output results as JSON")
     json: Boolean = false,
+    @HelpMessage("Output a HTML report file?")
+    report: Boolean = false
   ) extends Main
 }

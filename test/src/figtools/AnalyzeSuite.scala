@@ -95,4 +95,34 @@ class AnalyzeSuite extends FunSuite {
     ))
   }
 
+  test("ID 1463671") {
+    assert(compareResults(
+      new AnalyzeImage(dir=TestDir, ids=Seq("1463671"), url=Some(Url)).analyze(),
+      Map(
+        "1463671" -> Map(
+          "Fig_4.tif" -> Map(
+            "A" -> LabelResult(
+              ArrayBuffer(
+                "(A) Top row: raw lateral force profiles for the +FF and \u2212FF subgroups (darker and lighter colors, respectively, with experiment 1 in red, experiment 2 in blue, mean \u00b1 SEM). The +FF and \u2212FF subgroups display differently-shaped force profiles but similar overall force levels during training, corresponding to similar average endpoint errors (not shown). The \u2212FF subgroup data are well-captured by the adaptation coefficient measure (black line), which is a regression onto the ideal force profile, while the +FF data are not. This explains why learning and decay appear attenuated in the +FF subgroup in Fig 3. We performed a control experiment consisting of a 0-FF \u201ctraining\u201d block and a zEC retention block (experiment 3) to provide a baseline reference for adaptation and decay. Considering the force profiles (colored traces in top row) relative to this baseline reference (gray traces in top row) reveals symmetric adaptation and decay between +FF and \u2212FF conditions for both training and retention (colored traces in second row). Note that the control experiment force profiles increase substantially during the retention period, indicating that the unreferenced shooting movement decay data in Fig 3 are confounded by a tendency to produce more positive force during an extended EC block. Without control-referencing, this tendency causes the +FF decay to be underestimated and the \u2212FF decay to be overestimated, as it was in Fig 3. Since the control-referenced retention data is still not always well explained by the shape of the adaptation coefficient measure, we quantified adaptation using an integrated lateral force measure that is agnostic to the shape of the force profile. "
+              ),
+              ArrayBuffer(Box(18, 0, 2169, 752))
+            ),
+            "B" -> LabelResult(
+              ArrayBuffer(
+                "(B) Like Fig 3, the control-referenced vEC and zEC learning and decay appear similar (red vs blue), but here we also see symmetric learning and decay across +FF and \u2212FF conditions in both experiments. The strong decay apparent in both the +FF and \u2212FF arms of the vEC experiment is in contrast to reports of the vEC manipulation eliminating decay. "
+              ),
+              ArrayBuffer(Box(0, 823, 1664, 1484))
+            ),
+            "C" -> LabelResult(
+              ArrayBuffer(
+                "(C) Consistent with the unreferenced adaptation coefficients in Fig 3, the analysis based on control-referenced integrated lateral forces shows similar learning and decay for the analogous vEC and zEC experiments, but it displays much greater symmetry across +FF vs \u2212FF conditions. For point-to-point movements, the vEC condition (red) actually seems to increase the decay somewhat over the corresponding zEC data (blue). These data fail to support the prediction that vEC-based retention will reduce or eliminate decay. For point-to-point movements, the hatched bars are experiment 4 (vECopp) in the 90\u00b0 direction, which is opposite to the zEC movement direction. The red and blue solid bars represent experiments 4 and 5 (vEC and zEC) in the 270\u00b0 direction. Error bars show SEM."
+              ),
+              ArrayBuffer(Box(20, 1524, 2117, 1980))
+            )
+          )
+        )
+      )
+    ))
+  }
+
 }

@@ -10,8 +10,7 @@ import scribe.Logger
 import scala.collection.immutable
 import de.sciss.equal.Implicits._
 
-object CaptionSegmenter {
-  val logger = Logger(getClass.getSimpleName)
+class CaptionSegmenter()(implicit log: ImageLog) {
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
 
   def segmentCaption(caption: String): Seq[CaptionGroup] = {
@@ -62,7 +61,7 @@ object CaptionSegmenter {
         case Parsed.Success(value, idx) =>
           val label = Label(value, i, idx, caption.substring(i, idx), labels.length)
           labels += label
-          logger.debug(s"label=${pp(label)}")
+          log.debug(s"label=${pp(label)}")
           i = idx
         case Parsed.Failure(_, _, _) =>
           i += 1
@@ -87,18 +86,18 @@ object CaptionSegmenter {
       }
       label2Values(label) = labelVals
     }
-    logger.debug(s"labelValues=${pp(labelValues)}")
-    logger.debug(s"label2Values=${pp(label2Values)}")
+    log.debug(s"labelValues=${pp(labelValues)}")
+    log.debug(s"label2Values=${pp(label2Values)}")
 
     //score the sets
     var series = ArrayBuffer[Series]()
     for (seriesType <- SeriesType.values) {
-      logger.debug(s"testing seriesType ${pp(seriesType)}")
+      log.debug(s"testing seriesType ${pp(seriesType)}")
 
       val sortedLabelValues = labelValues.sortBy(x =>(
         getIndex(x._1.value, seriesType),
         x._2.labelIndex))
-      logger.debug(s"sortedLabelValues=${pp(sortedLabelValues)}")
+      log.debug(s"sortedLabelValues=${pp(sortedLabelValues)}")
 
       var score = 0
       for (i <- 0 until sortedLabelValues.size-1) {
@@ -127,7 +126,7 @@ object CaptionSegmenter {
       }
       series += Series(seriesType, score, includedLabels.toList.sortBy(_.labelIndex))
     }
-    logger.debug(s"series=${pp(series)}")
+    log.debug(s"series=${pp(series)}")
 
     // Try to determine if the description precedes or follows the label caption
     // TODO: improve this?
@@ -164,8 +163,8 @@ object CaptionSegmenter {
           set.score * (usedLabels.size.toDouble / set.labels.length.toDouble))
       }
     }
-    logger.debug(s"caption=$caption")
-    logger.debug(s"captionGroups=${pp(captionGroups)}")
+    log.debug(s"caption=$caption")
+    log.debug(s"captionGroups=${pp(captionGroups)}")
     captionGroups
   }
 

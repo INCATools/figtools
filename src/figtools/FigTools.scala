@@ -1,4 +1,5 @@
 package figtools
+import java.awt.GraphicsEnvironment
 import java.util.concurrent.Callable
 
 import org.tsers.zeison.Zeison
@@ -7,6 +8,7 @@ import caseapp._
 import caseapp.core.help.WithHelp
 import figtools.Commands._
 import ij.ImagePlus
+import javax.swing.SwingUtilities
 import net.imagej.legacy.LegacyService
 import net.imagej.patcher.LegacyInjector
 import org.json4s.native.Serialization.writePretty
@@ -25,7 +27,6 @@ object FigTools extends CommandApp[Main] {
   override def appVersion: String = "0.1.0"
   override def progName: String = "figtools"
 
-  val logger = Logger(getClass.getSimpleName)
   val edgeDetectors = Map(
     //"susan"->EdgeDetectors.Susan,
     "imagej"->EdgeDetectors.ImageJ)
@@ -125,7 +126,8 @@ object FigTools extends CommandApp[Main] {
           args.remaining,
           debug,
           Some(analyze.common.url),
-          File(analyze.dataPath)).analyze()
+          File(analyze.dataPath),
+          analyze.report).analyze()
         if (analyze.json) {
           val json = writePretty(results)
           println(json)
@@ -148,7 +150,12 @@ object FigTools extends CommandApp[Main] {
       })
     }
     def run(imp: ImagePlus, command: String, options: String): Unit = {
-      run {
+      if (GraphicsEnvironment.isHeadless) {
+        run {
+          ij.IJ.run(imp, command, options)
+        }
+      }
+      else {
         ij.IJ.run(imp, command, options)
       }
     }

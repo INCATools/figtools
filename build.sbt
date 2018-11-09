@@ -61,7 +61,7 @@ lazy val figtools = (project in file(".")).
       "de.sciss" %% "equal" % "0.1.2",
       "io.reactivex" %% "rxscala" % "0.26.5",
       "net.imagej" % "imagej" % "2.0.0-rc-68",
-      "net.imagej" % "imagej-legacy" % "0.33.3-SNAPSHOT",
+      "net.imagej" % "imagej-legacy" % "0.33.3",
       "net.sourceforge.htmlcleaner" % "htmlcleaner" % "2.22",
       "net.sourceforge.tess4j" % "tess4j" % "3.4.0",
       "org.apache.pdfbox" % "pdfbox" % "2.0.11",

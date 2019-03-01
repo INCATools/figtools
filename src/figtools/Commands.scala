@@ -53,6 +53,8 @@ object Commands {
     @HelpMessage("Output results as JSON")
     json: Boolean = false,
     @HelpMessage("Output a HTML report file?")
-    report: Boolean = false
+    report: Boolean = false,
+    @HelpMessage("What port the report web server should run on")
+    reportPort: Int = 8080
   ) extends Main
 }

@@ -113,10 +113,6 @@ object FigTools extends CommandApp[Main] {
         new FigShareApi(downloadAll.common.url).downloadAll(downloadAll.outDir)
       case analyze: Analyze =>
         val debug = analyze.common.debug
-        if (debug) {
-          scribe.Logger.root.clearHandlers().clearModifiers().
-            withHandler(minimumLevel = Some(Level.Debug)).replace()
-        }
         edgeDetector = analyze.edgeDetector
         pdfExportResolution = analyze.pdfExportResolution
         val results = new AnalyzeImage(

@@ -72,6 +72,7 @@ lazy val figtools = (project in file(".")).
       "org.scalactic" %% "scalactic" % "3.0.5",
       "org.scalatest" %% "scalatest" % "3.0.5" % "test",
       "org.tsers.zeison" %% "zeison" % "0.8.0-SNAPSHOT",
+      "com.lihaoyi" %% "cask" % "0.1.9",
     ),
     logBuffered in Test := false,
     artifactPath in (Compile, packageBin) := {

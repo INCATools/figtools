@@ -12,6 +12,7 @@ import ij.process.Blitter
 import ij.{ImagePlus, WindowManager}
 import org.jline.terminal.TerminalBuilder
 import better.files._
+import com.github.davidmoten.rtree.geometry.Geometries
 import de.sciss.equal.Implicits._
 import javax.swing.SwingUtilities
 import figtools.FigTools.IJ
@@ -23,36 +24,39 @@ import scalatags.Text.all._
 import scala.collection.mutable.ArrayBuffer
 
 class ImageLog(name: String = "FigTools", debug: Boolean = false) extends scribe.Logger() {
+  val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
+
   // union type magic
   type ¬[A] = A => Nothing
   type ∨[T, U] = ¬[¬[T] with ¬[U]]
   type ¬¬[A] = ¬[¬[A]]
   type |∨|[T, U] = { type λ[X] = ¬¬[X] <:< (T ∨ U) }
 
-  val preLog = new StringBuilder()
+  val preLog = new ArrayBuffer[String]()
   case class Report
   (imp: ImagePlus,
    description: String,
    rois: Seq[(String,Roi)] = new ArrayBuffer(),
-   log: StringBuilder = new StringBuilder())
+   log: ArrayBuffer[String] = new ArrayBuffer())
   val reportRecords = ArrayBuffer[Report]()
 
-  this.withHandler(
-    minimumLevel=Some(if (debug) Level.Debug else Level.Info),
-    writer = new Writer {
-      override def write[M](record: LogRecord[M], output: String) = {
-        Console.err.print(output)
-        if (reportRecords.size > 1) {
-          reportRecords.last.log ++= output
-        }
-        else if (reportRecords.size == 1) {
-          reportRecords.last.log ++= preLog ++ output
-        }
-        else {
-          preLog ++= output
-        }
-      }
-    })
+
+//  scribe.Logger.root.clearHandlers().clearModifiers().withHandler(
+//    minimumLevel=Some(if (debug) Level.Debug else Level.Info),
+//    writer = new Writer {
+//      override def write[M](record: LogRecord[M], output: String) = {
+//        Console.err.print(output)
+//        if (reportRecords.size > 1) {
+//          reportRecords.last.log += output
+//        }
+//        else if (reportRecords.size == 1) {
+//          reportRecords.last.log ++= (preLog ++ Seq(output))
+//        }
+//        else {
+//          preLog += output
+//        }
+//      }
+//    }).replace()
 
   def clear(): Unit = {
     preLog.clear()
@@ -141,45 +145,86 @@ class ImageLog(name: String = "FigTools", debug: Boolean = false) extends scribe
     }
   }
 
-  def toHtml(): String = {
+  def toHtml(id: String, title: String): String = {
+    val Width = 640
+    Console.err.println(s"reportRecords=${pp(reportRecords)}")
     val tag = html(
       head(
-        script(src:="https://code.jquery.com/jquery-3.3.1.min.js"),
-        script(src:="https://cdnjs.cloudflare.com/ajax/libs/maphilight/1.4.0/jquery.maphilight.js"),
-        script(
-          """
-            |$(document).ready(function() {
-            |  $('img[usemap]').maphighlight({alwaysOn: true});
-            |});
-          """.stripMargin),
+        link(rel:="stylesheet", attr("type"):="text/css", href:="https://cdn.jsdelivr.net/npm/slick-carousel@1.8.1/slick/slick.css"),
+        link(rel:="stylesheet", attr("type"):="text/css", href:="https://cdn.jsdelivr.net/npm/slick-carousel@1.8.1/slick/slick-theme.css"),
       ),
       body(
-        reportRecords.zipWithIndex.map{case (r,i)=>
-          val baos = new ByteArrayOutputStream()
-          ImageIO.write(r.imp.getBufferedImage, "jpg", baos)
-          val mapName = s"map-${r.imp.getTitle.replaceAll("""[\/ :_]""",".")}"
-          div(
-            h2(s"${r.imp.getTitle}: Step ${i+1} - ${r.description}"),
-            map(attr("name"):=mapName,
-              r.rois.map{roi=>
-                area(
-                  attr("shape"):="rect",
-                  attr("title"):=roi._1,
-                  attr("coords"):=Seq(
-                    roi._2.getXBase.toInt,
-                    roi._2.getYBase.toInt,
-                    (roi._2.getXBase+roi._2.getFloatWidth).toInt,
-                    (roi._2.getYBase+roi._2.getFloatHeight).toInt,
-                  ).mkString(","),
-                )
-              }
-            ),
-            img(
-              src:=s"data:image/jpg;base64,${Base64.getMimeEncoder.encodeToString(baos.toByteArray)}",
-              style:="border: 1px solid black",
-              attr("usemap") := s"#$mapName"),
-            pre(s"${r.log}"))
-        }
+        div(style:="position: relative; width: 80%; margin: auto",
+          h1(s"$id - $title"),
+          div(attr("class"):=s"id_$id",
+            style:="position: relative; padding: 30px; margin: auto",
+            reportRecords.zipWithIndex.map{case (r,i)=>
+              val baos = new ByteArrayOutputStream()
+              val imp = r.imp.duplicate()
+              val scaleFactor = Width.toDouble / imp.getWidth.toDouble
+              imp.setProcessor(imp.getTitle(), imp.getProcessor.resize(
+                (imp.getWidth.toDouble * scaleFactor).toInt,
+                (imp.getHeight.toDouble * scaleFactor).toInt))
+              ImageIO.write(r.imp.getBufferedImage, "jpg", baos)
+              val mapName = s"map-${r.imp.getTitle.replaceAll("""[\/ :_]+""",".")}-step$i"
+              div(
+                h2(s"${r.imp.getTitle}: Step ${i+1} - ${r.description}"),
+                map(attr("name"):=mapName,
+                  r.rois.map{r=>(r._1, Geometries.rectangle(
+                    r._2.getXBase,
+                    r._2.getYBase,
+                    r._2.getXBase+r._2.getFloatWidth,
+                    r._2.getYBase+r._2.getFloatHeight))}.
+                    sortWith{(a,b)=>
+                      if ( // a contains b, prefer b
+                        a._2.x1 <= b._2.x1 &&
+                          a._2.x2 >= b._2.x2 &&
+                          a._2.y1 <= b._2.y1 &&
+                          a._2.y2 >= b._2.y2) false
+                      else if ( // b contains a, prefer a
+                        b._2.x1 <= a._2.x1 &&
+                          b._2.x2 >= a._2.x2 &&
+                          b._2.y1 <= a._2.y1 &&
+                          b._2.y2 >= a._2.y2) true
+                      else if ( // a intersects b, and the overlap area / total area of a is less than that of b, prefer b
+                        a._2.intersects(b._2) &&
+                          (((math.min(a._2.x2, b._2.x2)-math.max(a._2.x1, b._2.x1))*(math.min(a._2.y2, b._2.y2)-math.max(a._2.y1, b._2.y1))).toDouble / a._2.area.toDouble) <
+                            (((math.min(a._2.x2, b._2.x2)-math.max(a._2.x1, b._2.x1))*(math.min(a._2.y2, b._2.y2)-math.max(a._2.y1, b._2.y1))).toDouble / b._2.area.toDouble)) false
+                      // prefer a if a is smaller than b
+                      else a._2.area < b._2.area
+                    }.map{roi=>
+                    area(
+                      attr("shape"):="rect",
+                      attr("title"):=roi._1,
+                      attr("coords"):=Seq(
+                        (roi._2.x1 * scaleFactor).toInt,
+                        (roi._2.y1 * scaleFactor).toInt,
+                        (roi._2.x2 * scaleFactor).toInt,
+                        (roi._2.y2 * scaleFactor).toInt,
+                      ).mkString(","),
+                    )
+                  }
+                ),
+                img(
+                  src:=s"data:image/jpg;base64,${Base64.getMimeEncoder(72, Array('\n'.toByte)).encodeToString(baos.toByteArray)}",
+                  width:=s"${Width}px",
+                  style:="border: 1px solid black",
+                  attr("usemap") := s"#$mapName"),
+                pre(AnsiToHtml.ansiToHtml(s"${r.log.mkString("\n")}")))
+            },
+          ),
+          script(src:="https://code.jquery.com/jquery-3.3.1.min.js"),
+          script(src:="https://cdnjs.cloudflare.com/ajax/libs/maphilight/1.4.0/jquery.maphilight.js"),
+          script(src:="https:///cdn.jsdelivr.net/npm/slick-carousel@1.8.1/slick/slick.min.js"),
+          script(src:="https://unpkg.com/infinite-scroll@3/dist/infinite-scroll.pkgd.min.js"),
+          script(
+            s"""
+               |$$(document).ready(function() {
+               |  $$('img[usemap]').maphilight({alwaysOn: true});
+               |  $$('.id_$id').slick({dots: true});
+               |});
+          """.stripMargin),
+        )
       )
     )
     val cleaner = new HtmlCleaner()
@@ -187,8 +232,8 @@ class ImageLog(name: String = "FigTools", debug: Boolean = false) extends scribe
     val pretty = new PrettyHtmlSerializer(cleaner.getProperties, "  ")
     pretty.getAsString(cleaned)
   }
-  def toHtml(fileName: String): Unit = {
-    Files.write(Paths.get(fileName), this.toHtml.getBytes)
+  def toHtml(fileName: String, id: String, title: String): Unit = {
+    Files.write(Paths.get(fileName), this.toHtml(id, title).getBytes)
   }
 }
 object ImageLog {

@@ -43,7 +43,7 @@ class AnalyzeImage
 {
   import AnalyzeImage._
 
-  implicit val log = ImageLog(getClass.getSimpleName, debug || report)
+  implicit val log = ImageLog(getClass.getSimpleName, debug)
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
 
   val Epsilon = 0.001
@@ -401,8 +401,8 @@ class AnalyzeImage
       }
     }
     if (report) {
-      val reportFile = dir/id/s"$id.html"
-      log.toHtml(reportFile.toString)
+      val reportFile = dir/id/s"$id.report.html"
+      log.toHtml(reportFile.toString, id, s"Image Report")
     }
     log.clear()
     results

@@ -41,22 +41,22 @@ class ImageLog(name: String = "FigTools", debug: Boolean = false) extends scribe
   val reportRecords = ArrayBuffer[Report]()
 
 
-//  scribe.Logger.root.clearHandlers().clearModifiers().withHandler(
-//    minimumLevel=Some(if (debug) Level.Debug else Level.Info),
-//    writer = new Writer {
-//      override def write[M](record: LogRecord[M], output: String) = {
-//        Console.err.print(output)
-//        if (reportRecords.size > 1) {
-//          reportRecords.last.log += output
-//        }
-//        else if (reportRecords.size == 1) {
-//          reportRecords.last.log ++= (preLog ++ Seq(output))
-//        }
-//        else {
-//          preLog += output
-//        }
-//      }
-//    }).replace()
+  scribe.Logger.root.clearHandlers().clearModifiers().withHandler(
+    minimumLevel=Some(if (debug) Level.Debug else Level.Info),
+    writer = new Writer {
+      override def write[M](record: LogRecord[M], output: String) = {
+        Console.err.print(output)
+        if (reportRecords.size > 1) {
+          reportRecords.last.log += output
+        }
+        else if (reportRecords.size == 1) {
+          reportRecords.last.log ++= (preLog ++ Seq(output))
+        }
+        else {
+          preLog += output
+        }
+      }
+    }).replace()
 
   def clear(): Unit = {
     preLog.clear()
@@ -154,10 +154,10 @@ class ImageLog(name: String = "FigTools", debug: Boolean = false) extends scribe
         link(rel:="stylesheet", attr("type"):="text/css", href:="https://cdn.jsdelivr.net/npm/slick-carousel@1.8.1/slick/slick-theme.css"),
       ),
       body(
-        div(style:="position: relative; width: 80%; margin: auto",
+        div(style:="position: relative; width: 80%; margin: auto; text-align: center",
           h1(s"$id - $title"),
           div(attr("class"):=s"id_$id",
-            style:="position: relative; padding: 30px; margin: auto",
+            style:="position: relative; padding: 30px; margin: auto; text-align: center",
             reportRecords.zipWithIndex.map{case (r,i)=>
               val baos = new ByteArrayOutputStream()
               val imp = r.imp.duplicate()
@@ -210,20 +210,21 @@ class ImageLog(name: String = "FigTools", debug: Boolean = false) extends scribe
                   width:=s"${Width}px",
                   style:="border: 1px solid black",
                   attr("usemap") := s"#$mapName"),
-                pre(AnsiToHtml.ansiToHtml(s"${r.log.mkString("\n")}")))
+                div(style:="text-align: left; max-height: 450px; overflow-y: scroll; white-space: pre-wrap;",
+                  pre(AnsiToHtml.ansiToHtml(s"${r.log.mkString("\n")}"))))
             },
           ),
           script(src:="https://code.jquery.com/jquery-3.3.1.min.js"),
           script(src:="https://cdnjs.cloudflare.com/ajax/libs/maphilight/1.4.0/jquery.maphilight.js"),
           script(src:="https:///cdn.jsdelivr.net/npm/slick-carousel@1.8.1/slick/slick.min.js"),
           script(src:="https://unpkg.com/infinite-scroll@3/dist/infinite-scroll.pkgd.min.js"),
-          script(
+          script(raw(
             s"""
                |$$(document).ready(function() {
                |  $$('img[usemap]').maphilight({alwaysOn: true});
-               |  $$('.id_$id').slick({dots: true});
+               |  $$('.id_$id').slick({dots: true, infinite: false, initialSlide: ${reportRecords.size-1}});
                |});
-          """.stripMargin),
+          """.stripMargin)),
         )
       )
     )

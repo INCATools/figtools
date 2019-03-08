@@ -3,6 +3,7 @@ package figtools
 import java.awt.GraphicsEnvironment
 import java.util.regex.Pattern
 
+import java.nio.file.{Files, Paths}
 import better.files._
 
 import collection.JavaConverters._
@@ -31,6 +32,10 @@ import figtools.FigTools.IJ
 import ij.WindowManager
 import ij.io.Opener
 
+import org.htmlcleaner.{HtmlCleaner, PrettyHtmlSerializer}
+import scalatags.Text.all._
+import org.json4s.native.Serialization.writePretty
+
 class AnalyzeImage
 ( edgeDetector: String = "imagej",
   pdfExportResolution: Int = 300,
@@ -45,6 +50,8 @@ class AnalyzeImage
 
   implicit val log = ImageLog(getClass.getSimpleName, debug)
   val pp = pprint.PPrinter(defaultWidth=40, defaultHeight=Int.MaxValue)
+
+  implicit val formats = org.json4s.DefaultFormats + new Box.BoxSerializer
 
   val Epsilon = 0.001
   val BetterConfidence = 10.0
@@ -67,7 +74,7 @@ class AnalyzeImage
 
   def analyze(): AnalysisResults = {
     val results = new util.LinkedHashMap[String, ImageResults]().asScala
-    val iter = if (ids.nonEmpty)
+    val idsToAnalyze = (if (ids.nonEmpty)
     // download the files if the directory does not exist
       ids.iterator.map { i =>
         val d = dir / i
@@ -80,10 +87,14 @@ class AnalyzeImage
     // find all
     else dir.list.
       filter { i => i.name.matches("[0-9]+") && (i / "datapackage.json").exists }.
-      map { _.name }
-    for (id <- iter) {
+      map { _.name }).toList
+
+    for (id <- idsToAnalyze) {
       val imageResults = analyzeImages(id)
       results(id) = imageResults
+    }
+    if (report) {
+      writeReportIndex(dir, idsToAnalyze)
     }
     results
   }
@@ -406,6 +417,40 @@ class AnalyzeImage
     }
     log.clear()
     results
+  }
+
+  def writeReportIndex(dir: File, ids: List[String]): Unit = {
+    val idReports = ids.filter{i=>file"$dir/$i/$i.report.html".exists}.map{i=>s"$i/$i.report.html"}
+    val tag = html(
+      head(
+        link(rel:="stylesheet", attr("type"):="text/css", href:="https://cdn.jsdelivr.net/npm/slick-carousel@1.8.1/slick/slick.css"),
+        link(rel:="stylesheet", attr("type"):="text/css", href:="https://cdn.jsdelivr.net/npm/slick-carousel@1.8.1/slick/slick-theme.css"),
+      ),
+      body(div(cls:="container"),
+        script(src:="https://code.jquery.com/jquery-3.3.1.min.js"),
+        script(src:="https://cdnjs.cloudflare.com/ajax/libs/maphilight/1.4.0/jquery.maphilight.js"),
+        script(src:="https:///cdn.jsdelivr.net/npm/slick-carousel@1.8.1/slick/slick.min.js"),
+        script(src:="https://unpkg.com/infinite-scroll@3/dist/infinite-scroll.pkgd.min.js"),
+        script(raw(
+          s"""
+             |var reports = ${writePretty(idReports)};
+             |$$('.container').infiniteScroll({
+             |  path: function() {
+             |    if (this.loadCount < reports.length) {
+             |      return reports[this.loadCount];
+             |    }
+             |    return undefined;
+             |  },
+             |});
+            """.stripMargin)),
+      )
+    )
+    val cleaner = new HtmlCleaner()
+    val cleaned = cleaner.clean(s"<!DOCTYPE html>${tag.render}")
+    val pretty = new PrettyHtmlSerializer(cleaner.getProperties, "  ")
+    val htmlout = pretty.getAsString(cleaned)
+    val fileName = dir/"index.html"
+    Files.write(Paths.get(fileName.toString), htmlout.getBytes)
   }
 
   implicit def sdOrder: Ordering[SegmentDescription] =
